@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"9fans.net/go/acme"
 )
@@ -32,6 +33,95 @@ var mdHeaderRe = regexp.MustCompile(`(?m)^#\s+(.+)$`)
 
 // File extensions that support denote front matter (per denote.el)
 var denoteFrontMatterFormats = []string{".org", ".md", ".txt"}
+
+var frontMatterTemplates = map[string]string{
+	"org": `#+title:      %s
+#+date:       %s
+#+filetags:   %s
+#+identifier: %s
+#+signature:  %s
+
+`,
+	"md-yaml": `---
+title:      %s
+date:       %s
+tags:       %s
+identifier: %s
+signature:  %s
+---
+
+`,
+	"md-toml": `+++
+title      = %s
+date       = %s
+tags       = %s
+identifier = %s
+signature  = %s
++++
+
+`,
+	"txt": `title:      %s
+date:       %s
+tags:       %s
+identifier: %s
+signature:  %s
+---------------------------
+
+`,
+}
+
+var fileExtensions = map[string]string{
+	"org":     ".org",
+	"md-yaml": ".md",
+	"md-toml": ".md",
+	"txt":     ".txt",
+}
+
+func formatKeywords(keywords []string, fileType string) string {
+	if len(keywords) == 0 {
+		return ""
+	}
+	switch fileType {
+	case "org":
+		return ":" + strings.Join(keywords, ":") + ":"
+	case "md-yaml", "md-toml":
+		return "[" + strings.Join(keywords, ", ") + "]"
+	default:
+		return strings.Join(keywords, " ")
+	}
+}
+
+func createNote(dir, title string, keywords []string, fileType string) (string, error) {
+	// Generate identifier
+	identifier := time.Now().Format("20060102T150405")
+	
+	// Format file name
+	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
+	
+	var keywordsPart string
+	if len(keywords) > 0 {
+		keywordsPart = "__" + strings.Join(keywords, "_")
+	}
+	
+	ext := fileExtensions[fileType]
+	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+	path := filepath.Join(dir, filename)
+	
+	// Generate front matter
+	template := frontMatterTemplates[fileType]
+	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
+	keywordsStr := formatKeywords(keywords, fileType)
+	
+	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, "")
+	
+	// Write file
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", err
+	}
+	
+	return path, nil
+}
 
 func extractTitle(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
@@ -105,6 +195,75 @@ func defaultDir() string {
 		return d
 	}
 	return filepath.Join(os.Getenv("HOME"), "doc")
+}
+
+func handleNew(dir string, args []string) {
+	// Rejoin args in case acme split them oddly
+	fullArg := strings.Join(args, " ")
+	
+	// Show usage if no arguments
+	if fullArg == "" {
+		fmt.Fprintf(os.Stderr, `Usage: new [-f type] 'Title' [tag1 tag2 ...]
+
+Create a new denote note with the given title and optional tags.
+
+Options:
+  -f type    File type (default: md-yaml)
+             Supported: org, md-yaml, md-toml, txt
+
+Examples:
+  new 'My Document Title' tag1 tag2
+  new -f org 'Meeting Notes' meeting project
+  new -f txt 'Journal Entry' journal
+
+Note: Title must be quoted with single quotes.
+`)
+		os.Exit(0)
+	}
+	
+	fileType := "md-yaml"
+	
+	// Check for -f flag
+	if strings.HasPrefix(fullArg, "-f ") {
+		parts := strings.SplitN(fullArg, " ", 3)
+		if len(parts) < 3 {
+			fmt.Fprintf(os.Stderr, "error: missing arguments after -f\nUsage: new [-f type] 'Title' [tag1 tag2 ...]\n")
+			os.Exit(1)
+		}
+		fileType = parts[1]
+		fullArg = parts[2]
+		if _, ok := frontMatterTemplates[fileType]; !ok {
+			fmt.Fprintf(os.Stderr, "error: unsupported file type: %s\nSupported: org, md-yaml, md-toml, txt\n", fileType)
+			os.Exit(1)
+		}
+	}
+	
+	// Extract title between single quotes
+	titleRe := regexp.MustCompile(`'([^']+)'`)
+	m := titleRe.FindStringSubmatch(fullArg)
+	if m == nil {
+		fmt.Fprintf(os.Stderr, "error: title must be quoted with single quotes\nUsage: new [-f type] 'Title' [tag1 tag2 ...]\n")
+		os.Exit(1)
+	}
+	title := m[1]
+	
+	// Extract keywords (everything after the closing quote)
+	afterTitle := strings.TrimSpace(fullArg[strings.Index(fullArg, m[0])+len(m[0]):])
+	var keywords []string
+	if afterTitle != "" {
+		keywords = strings.Fields(afterTitle)
+	}
+	
+	// Create the note
+	path, err := createNote(dir, title, keywords, fileType)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating note: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Display the newly created note
+	note := parseNote(path)
+	displayNotes([]*Note{note})
 }
 
 type filter struct {
@@ -197,6 +356,44 @@ func main() {
 		filterArgs = append(filterArgs, strings.Fields(arg)...)
 	}
 
+	// Show help if ? is passed
+	if len(filterArgs) == 1 && filterArgs[0] == "?" {
+		fmt.Fprintf(os.Stderr, `Denote - manage denote notes in acme
+
+Usage:
+  Denote [filters...]           List notes matching filters
+  Denote new 'Title' [tags...]  Create a new note
+  Denote ?                      Show this help
+
+Filters:
+  date:/regex/     Match date/identifier
+  title:/regex/    Match title
+  tag:/regex/      Match tags
+  /regex/          Match any field
+  !filter          Negate filter
+  plain-text       Exact match (no regex)
+
+Examples:
+  Denote                              List all notes
+  Denote date:/2025.*/                Notes from 2025
+  Denote tag:meeting                  Notes tagged 'meeting'
+  Denote date:/202510.*/ !tag:journal October 2025, not journal
+  Denote new 'My Note' tag1 tag2      Create new note
+
+Options:
+  -dir path    Denote directory (default: $DENOTE_DIR or ~/doc)
+
+For 'new' command help: Denote new
+`)
+		os.Exit(0)
+	}
+
+	// Check if this is a "new" command
+	if len(filterArgs) > 0 && filterArgs[0] == "new" {
+		handleNew(*dir, filterArgs[1:])
+		return
+	}
+
 	var filters []*filter
 	for _, arg := range filterArgs {
 		filt, err := parseFilter(arg)
@@ -239,6 +436,10 @@ func main() {
 		return notes[i].Identifier > notes[j].Identifier
 	})
 
+	displayNotes(notes)
+}
+
+func displayNotes(notes []*Note) {
 	w, err := acme.New()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating acme window: %v\n", err)
