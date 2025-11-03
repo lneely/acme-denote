@@ -27,36 +27,52 @@ var signatureRe = regexp.MustCompile(`==([^-_\.]+)`)
 var titleRe = regexp.MustCompile(`--([^_\.]+)`)
 var keywordsRe = regexp.MustCompile(`__(.+?)(?:\.|$)`)
 var orgTitleRe = regexp.MustCompile(`(?m)^#\+title:\s*(.+)$`)
-var mdTitleRe = regexp.MustCompile(`(?m)^#\s+(.+)$`)
+var mdYamlTitleRe = regexp.MustCompile(`(?ms)^---\n.*?^title:\s*(.+?)$.*?^---`)
+var mdHeaderRe = regexp.MustCompile(`(?m)^#\s+(.+)$`)
+
+// File extensions that support denote front matter (per denote.el)
+var denoteFrontMatterFormats = []string{".org", ".md", ".txt"}
 
 func extractTitle(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	supported := false
+	for _, fmt := range denoteFrontMatterFormats {
+		if ext == fmt {
+			supported = true
+			break
+		}
+	}
+	if !supported {
+		return ""
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
-	// Check if binary
-	if len(data) > 512 && !isText(data[:512]) {
-		return ""
-	}
 	text := string(data)
-	// Try org-mode title
-	if m := orgTitleRe.FindStringSubmatch(text); m != nil {
-		return strings.TrimSpace(m[1])
-	}
-	// Try markdown title
-	if m := mdTitleRe.FindStringSubmatch(text); m != nil {
-		return strings.TrimSpace(m[1])
-	}
-	return ""
-}
-
-func isText(data []byte) bool {
-	for _, b := range data {
-		if b == 0 {
-			return false
+	
+	// Try org-mode #+title: first, then fall back to first heading
+	if ext == ".org" {
+		if m := orgTitleRe.FindStringSubmatch(text); m != nil {
+			return strings.TrimSpace(m[1])
+		}
+		// Fallback to first heading (lines starting with *)
+		if m := regexp.MustCompile(`(?m)^\*+\s+(.+)$`).FindStringSubmatch(text); m != nil {
+			return strings.TrimSpace(m[1])
 		}
 	}
-	return true
+	
+	// Try markdown YAML front matter title: first, then fall back to # header
+	if ext == ".md" {
+		if m := mdYamlTitleRe.FindStringSubmatch(text); m != nil {
+			return strings.TrimSpace(strings.Trim(m[1], `"`))
+		}
+		if m := mdHeaderRe.FindStringSubmatch(text); m != nil {
+			return strings.TrimSpace(m[1])
+		}
+	}
+	
+	return ""
 }
 
 func parseNote(path string) *Note {
@@ -91,25 +107,132 @@ func defaultDir() string {
 	return filepath.Join(os.Getenv("HOME"), "doc")
 }
 
+type filter struct {
+	field  string // "date", "title", "tag", or "" for any
+	re     *regexp.Regexp
+	negate bool
+}
+
+func parseFilter(arg string) (*filter, error) {
+	// Check for negation prefix
+	negate := strings.HasPrefix(arg, "!")
+	if negate {
+		arg = strings.TrimPrefix(arg, "!")
+	}
+	
+	// Match field:/regex/ or field:text or just text/regex
+	m := regexp.MustCompile(`^(?:(date|title|tag):)?(.+)$`).FindStringSubmatch(arg)
+	if m == nil {
+		return nil, fmt.Errorf("invalid filter syntax: %s\nSupported: [!]date:/regex/, [!]title:/regex/, [!]tag:/regex/, or plain text", arg)
+	}
+	
+	pattern := m[2]
+	// If pattern is wrapped in /.../, treat as regex
+	if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/") {
+		pattern = strings.TrimPrefix(strings.TrimSuffix(pattern, "/"), "/")
+	} else {
+		// Plain text - escape for exact match
+		pattern = regexp.QuoteMeta(pattern)
+	}
+	
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex: %v", err)
+	}
+	return &filter{field: m[1], re: re, negate: negate}, nil
+}
+
+func (f *filter) matches(n *Note) bool {
+	result := false
+	switch f.field {
+	case "date":
+		result = f.re.MatchString(n.Identifier)
+	case "title":
+		title := n.Title
+		if title == "" {
+			title = n.FileTitle
+		}
+		result = f.re.MatchString(title)
+	case "tag":
+		// For tags, check if ANY tag matches
+		for _, kw := range n.Keywords {
+			if f.re.MatchString(kw) {
+				result = true
+				break
+			}
+		}
+	default: // any field
+		if f.re.MatchString(n.Identifier) {
+			result = true
+		} else {
+			title := n.Title
+			if title == "" {
+				title = n.FileTitle
+			}
+			if f.re.MatchString(title) {
+				result = true
+			} else {
+				for _, kw := range n.Keywords {
+					if f.re.MatchString(kw) {
+						result = true
+						break
+					}
+				}
+			}
+		}
+	}
+	if f.negate {
+		return !result
+	}
+	return result
+}
+
 func main() {
 	dir := flag.String("dir", defaultDir(), "denote directory")
 	flag.Parse()
 
-	entries, err := os.ReadDir(*dir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading directory: %v\n", err)
-		os.Exit(1)
+	// Split args on whitespace to handle acme mouse chording
+	var filterArgs []string
+	for _, arg := range flag.Args() {
+		filterArgs = append(filterArgs, strings.Fields(arg)...)
+	}
+
+	var filters []*filter
+	for _, arg := range filterArgs {
+		filt, err := parseFilter(arg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		filters = append(filters, filt)
 	}
 
 	var notes []*Note
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	err := filepath.Walk(*dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
-		path := filepath.Join(*dir, e.Name())
+		if info.IsDir() {
+			return nil
+		}
 		if note := parseNote(path); note.Identifier != "" {
-			notes = append(notes, note)
+			// All filters must match (AND logic)
+			match := true
+			for _, filt := range filters {
+				if !filt.matches(note) {
+					match = false
+					break
+				}
+			}
+			if match {
+				notes = append(notes, note)
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading directory: %v\n", err)
+		os.Exit(1)
 	}
 
 	sort.Slice(notes, func(i, j int) bool {
