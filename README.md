@@ -102,7 +102,7 @@ Both commands output to a `+Denote` window with clickable file paths. Results sh
 
 *Quick journal access:*
 1. Middle-click `Journal` anywhere
-2. Opens today's entry or creates it if missing
+2. Shows today's entry in the search result, creating it if necessary
 
 ## Configuration
 
