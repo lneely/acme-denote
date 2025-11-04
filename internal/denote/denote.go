@@ -128,6 +128,55 @@ func (f *Filter) Matches(n *Note) bool {
 	return result
 }
 
+// SortType represents different sorting options
+type SortType int
+
+const (
+	SortByID SortType = iota
+	SortByDate
+	SortByTitle
+)
+
+// ParseSortType parses a sort string into a SortType
+func ParseSortType(sortStr string) (SortType, error) {
+	switch strings.ToLower(sortStr) {
+	case "id", "identifier":
+		return SortByID, nil
+	case "date":
+		return SortByDate, nil
+	case "title":
+		return SortByTitle, nil
+	default:
+		return SortByID, fmt.Errorf("invalid sort type: %s (valid options: id, date, title)", sortStr)
+	}
+}
+
+// SortNotes sorts a slice of notes based on the specified sort type
+func SortNotes(notes []*Note, sortType SortType) {
+	switch sortType {
+	case SortByID:
+		sort.Slice(notes, func(i, j int) bool {
+			return notes[i].Identifier > notes[j].Identifier // Reverse chronological by default
+		})
+	case SortByDate:
+		sort.Slice(notes, func(i, j int) bool {
+			return notes[i].Identifier > notes[j].Identifier // Same as ID since ID contains date
+		})
+	case SortByTitle:
+		sort.Slice(notes, func(i, j int) bool {
+			titleI := notes[i].FileTitle
+			if titleI == "" {
+				titleI = notes[i].Title
+			}
+			titleJ := notes[j].FileTitle
+			if titleJ == "" {
+				titleJ = notes[j].Title
+			}
+			return strings.ToLower(titleI) < strings.ToLower(titleJ)
+		})
+	}
+}
+
 // FindNotes searches for notes in a directory matching filters
 func FindNotes(dir string, filters []*Filter) ([]*Note, error) {
 	var notes []*Note
@@ -156,9 +205,8 @@ func FindNotes(dir string, filters []*Filter) ([]*Note, error) {
 		return nil, err
 	}
 
-	sort.Slice(notes, func(i, j int) bool {
-		return notes[i].Identifier > notes[j].Identifier
-	})
+	// Default sort by ID (reverse chronological)
+	SortNotes(notes, SortByID)
 
 	return notes, nil
 }
@@ -185,11 +233,14 @@ func DisplayNotes(notes []*Note) error {
 			title = "(untitled)"
 		}
 		
+		filename := filepath.Base(n.Path)
+		buf.WriteString(filename)
+		buf.WriteString(" : ")
 		buf.WriteString(title)
 		if len(n.Keywords) > 0 {
 			fmt.Fprintf(&buf, " (%s)", strings.Join(n.Keywords, ", "))
 		}
-		fmt.Fprintf(&buf, "\n%s\n\n", n.Path)
+		fmt.Fprintf(&buf, " [%s]\n", n.Path)
 	}
 
 	w.Write("body", []byte(buf.String()))

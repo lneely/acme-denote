@@ -97,9 +97,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, `Denote - manage denote notes in acme
 
 Usage:
-  Denote [filters...]           List notes matching filters
-  Denote new 'Title' [tags...]  Create a new note
-  Denote ?                      Show this help
+  Denote [filters...] [sort:TYPE]   List notes matching filters
+  Denote new 'Title' [tags...]      Create a new note
+  Denote ?                          Show this help
 
 Filters:
   date:/regex/     Match date/identifier
@@ -108,13 +108,16 @@ Filters:
   /regex/          Match any field
   !filter          Negate filter
   plain-text       Exact match (no regex)
+  sort:TYPE        Sort results (id, date, title) - default: id
 
 Examples:
-  Denote                              List all notes
-  Denote date:/2025.*/                Notes from 2025
-  Denote tag:meeting                  Notes tagged 'meeting'
-  Denote date:/202510.*/ !tag:journal October 2025, not journal
-  Denote new 'My Note' tag1 tag2      Create new note
+  Denote                                List all notes (sorted by id)
+  Denote sort:title                     List all notes sorted by title
+  Denote date:/2025.*/                  Notes from 2025
+  Denote tag:meeting sort:title         Notes tagged 'meeting' sorted by title
+  Denote tag:journal                    List journal entries
+  Denote date:/202510.*/ !tag:journal   October 2025, not journal
+  Denote new 'My Note' tag1 tag2        Create new note
 
 Options:
   -dir path    Denote directory (default: $DENOTE_DIR or ~/doc)
@@ -131,7 +134,20 @@ For 'new' command help: Denote new
 	}
 
 	var filters []*denote.Filter
+	sortType := denote.SortByID // Default sort
+
 	for _, arg := range filterArgs {
+		if strings.HasPrefix(arg, "sort:") {
+			sortStr := strings.TrimPrefix(arg, "sort:")
+			var err error
+			sortType, err = denote.ParseSortType(sortStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			continue
+		}
+		
 		filt, err := denote.ParseFilter(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -145,6 +161,9 @@ For 'new' command help: Denote new
 		fmt.Fprintf(os.Stderr, "error reading directory: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Apply sorting
+	denote.SortNotes(notes, sortType)
 
 	if err := denote.DisplayNotes(notes); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

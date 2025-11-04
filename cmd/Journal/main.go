@@ -33,7 +33,7 @@ func main() {
 
 	args := flag.Args()
 	dir := journalDir()
-	
+
 	// Ensure journal directory exists
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "error creating journal directory: %v\n", err)
@@ -41,18 +41,18 @@ func main() {
 	}
 
 	now := time.Now()
-	
+
 	if len(args) == 0 {
 		// Journal - find or create today's entry
 		dateFilter, _ := denote.ParseFilter(fmt.Sprintf("date:%s", now.Format("20060102")))
 		tagFilter, _ := denote.ParseFilter("tag:journal")
-		
+
 		notes, err := denote.FindNotes(dir, []*denote.Filter{dateFilter, tagFilter})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error searching for journal: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		if len(notes) > 0 {
 			if err := denote.DisplayNotes(notes); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -60,7 +60,7 @@ func main() {
 			}
 			return
 		}
-		
+
 		// Create new entry for today
 		title := formatJournalTitle(now)
 		path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, "")
@@ -75,12 +75,12 @@ func main() {
 		}
 		return
 	}
-	
+
 	if args[0] == "add" {
 		// Journal add [YYYYMMDD]
 		var targetDate time.Time
 		var identifier string
-		
+
 		if len(args) > 1 {
 			var err error
 			targetDate, err = parseDate(args[1])
@@ -93,7 +93,7 @@ func main() {
 			targetDate = now
 			identifier = now.Format("20060102T150405")
 		}
-		
+
 		title := formatJournalTitle(targetDate)
 		path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, identifier)
 		if err != nil {
@@ -107,8 +107,8 @@ func main() {
 		}
 		return
 	}
-	
-	fmt.Fprintf(os.Stderr, "Usage:\n  Journal           Find or create today's entry\n  Journal add       Create additional entry for today\n  Journal add DATE  Create entry for specific date (YYYYMMDD)\n")
+
+	fmt.Fprintf(os.Stderr, "Usage:\n  Journal                 Find or create today's entry\n  Journal add             Create additional entry for today\n  Journal add DATE        Create entry for specific date (YYYYMMDD)\n")
 	os.Exit(1)
 }
 
