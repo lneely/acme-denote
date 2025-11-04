@@ -233,14 +233,11 @@ func DisplayNotes(notes []*Note) error {
 			title = "(untitled)"
 		}
 		
-		filename := filepath.Base(n.Path)
-		buf.WriteString(filename)
-		buf.WriteString(" : ")
 		buf.WriteString(title)
 		if len(n.Keywords) > 0 {
 			fmt.Fprintf(&buf, " (%s)", strings.Join(n.Keywords, ", "))
 		}
-		fmt.Fprintf(&buf, " [%s]\n", n.Path)
+		fmt.Fprintf(&buf, "\n%s\n\n", n.Path)
 	}
 
 	w.Write("body", []byte(buf.String()))
