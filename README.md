@@ -27,11 +27,13 @@ Search and manage denote notes.
 
 **Usage in acme:**
 ```
-Denote                              # List all notes
+Denote                              # List all notes (sorted by ID, newest first)
 Denote tag:meeting                  # Notes tagged 'meeting'
 Denote date:/2025.*/                # Notes from 2025
 Denote date:/202510.*/ !tag:journal # October 2025, not journal
 Denote new 'My Note' tag1 tag2      # Create new note
+Denote sort:title                   # List all notes sorted alphabetically
+Denote tag:journal sort:title       # Journal entries sorted by title
 ```
 
 **Filter syntax:**
@@ -41,6 +43,11 @@ Denote new 'My Note' tag1 tag2      # Create new note
 - `/regex/` - Match any field
 - `!filter` - Negate filter
 - `plain-text` - Exact match (no regex)
+
+**Sort options:**
+- `sort:id` - Sort by identifier/date (default, newest first)
+- `sort:date` - Sort by date (same as ID)
+- `sort:title` - Sort alphabetically by title
 
 **Creating notes:**
 ```
@@ -71,11 +78,9 @@ Journal entries are automatically:
 
 Both commands output to a `+Denote` window with clickable file paths. Results show:
 ```
-Meeting Notes (work, project)
-/home/user/doc/20251103T183000--meeting-notes__work_project.md
+20251103T183000--meeting-notes__work_project.md : Meeting Notes (work, project) [/home/user/doc/20251103T183000--meeting-notes__work_project.md]
 
-Daily Standup (journal)
-/home/user/doc/journal/20251103T090000--monday-3-november-2025-09-00__journal.md
+20251103T090000--monday-3-november-2025-09-00__journal.md : Daily Standup (journal) [/home/user/doc/journal/20251103T090000--monday-3-november-2025-09-00__journal.md]
 ```
 
 **Workflows:**
