@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"denote/internal/denote"
 )
@@ -82,6 +84,178 @@ Note: Title must be quoted with single quotes.
 	}
 }
 
+func handleRename(args []string) {
+	fullArg := strings.Join(args, " ")
+	
+	if fullArg == "" {
+		fmt.Fprintf(os.Stderr, `Usage: rename /path/to/file ['Title'] [tag1 tag2 ...]
+
+Rename a file using denote naming convention and optionally update front matter.
+
+No arguments (just file path):
+  - Extract title and tags from front matter (if present)
+  - Apply denote naming convention to filename
+
+Title provided:
+  - Update front matter title (if file supports it)
+  - Rename file with new title
+
+Title and tags provided:
+  - Update front matter title and tags (if file supports it)
+  - Rename file with new title and tags
+
+Examples:
+  rename /path/to/file.md
+  rename /path/to/file.md 'New Title'
+  rename /path/to/file.md 'New Title' tag1 tag2
+
+Note: Title must be quoted with single quotes.
+`)
+		os.Exit(0)
+	}
+	
+	// Extract file path (first argument before any quotes)
+	parts := strings.Fields(fullArg)
+	if len(parts) == 0 {
+		fmt.Fprintf(os.Stderr, "error: no file path provided\n")
+		os.Exit(1)
+	}
+	
+	filePath := parts[0]
+	if !filepath.IsAbs(filePath) {
+		var err error
+		filePath, err = filepath.Abs(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: invalid file path: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	
+	if _, err := os.Stat(filePath); err != nil {
+		fmt.Fprintf(os.Stderr, "error: file not found: %s\n", filePath)
+		os.Exit(1)
+	}
+	
+	// Get arguments after file path
+	argsAfterPath := strings.TrimSpace(strings.TrimPrefix(fullArg, parts[0]))
+	
+	// Check if title is provided (in quotes)
+	titleRe := regexp.MustCompile(`'([^']+)'`)
+	m := titleRe.FindStringSubmatch(argsAfterPath)
+	
+	var newTitle string
+	var newTags []string
+	
+	if m != nil {
+		// Title provided with quotes
+		newTitle = m[1]
+		
+		// Extract tags (everything after the closing quote)
+		afterTitle := strings.TrimSpace(argsAfterPath[strings.Index(argsAfterPath, m[0])+len(m[0]):])
+		if afterTitle != "" {
+			newTags = strings.Fields(afterTitle)
+		}
+	} else if argsAfterPath != "" {
+		// No quotes - acme 2-1 chord passes everything as one string
+		// Treat everything as title if no tags look like tags (lowercase single words)
+		// For now, assume last words that are lowercase and short are tags
+		argParts := strings.Fields(argsAfterPath)
+		if len(argParts) > 0 {
+			// Find where tags start (lowercase single words at the end)
+			titleEnd := len(argParts)
+			for i := len(argParts) - 1; i >= 0; i-- {
+				word := argParts[i]
+				// If word looks like a tag (lowercase, no spaces, short)
+				if word == strings.ToLower(word) && len(word) < 20 && !strings.Contains(word, " ") {
+					titleEnd = i
+				} else {
+					break
+				}
+			}
+			
+			// If we found potential tags
+			if titleEnd < len(argParts) {
+				newTitle = strings.Join(argParts[:titleEnd], " ")
+				newTags = argParts[titleEnd:]
+			} else {
+				// Everything is the title
+				newTitle = argsAfterPath
+			}
+		}
+	}
+	
+	// Parse existing file
+	note := denote.ParseNote(filePath)
+	fm, err := denote.ParseFrontMatter(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading file: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Determine final title and tags
+	finalTitle := newTitle
+	finalTags := newTags
+	finalIdentifier := note.Identifier
+	
+	if finalTitle == "" {
+		// No title argument - use front matter or filename
+		if fm.Title != "" {
+			finalTitle = fm.Title
+		} else if note.FileTitle != "" {
+			finalTitle = note.FileTitle
+		} else if note.Title != "" {
+			finalTitle = note.Title
+		} else {
+			// Use filename without extension as fallback
+			finalTitle = strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+		}
+	}
+	
+	if len(finalTags) == 0 {
+		// No tags argument - use front matter or filename tags
+		if len(fm.Tags) > 0 {
+			finalTags = fm.Tags
+		} else if len(note.Keywords) > 0 {
+			finalTags = note.Keywords
+		}
+	}
+	
+	if finalIdentifier == "" {
+		// No identifier in filename - use from front matter or generate new
+		if fm.Identifier != "" {
+			finalIdentifier = fm.Identifier
+		} else {
+			finalIdentifier = time.Now().Format("20060102T150405")
+		}
+	}
+	
+	// Update front matter if file supports it and we have new values
+	if fm.FileType != "" && (newTitle != "" || len(newTags) > 0) {
+		fm.Title = finalTitle
+		fm.Tags = finalTags
+		fm.Identifier = finalIdentifier
+		
+		if err := denote.UpdateFrontMatter(filePath, fm); err != nil {
+			fmt.Fprintf(os.Stderr, "error updating front matter: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	
+	// Rename file
+	newPath, err := denote.RenameNote(filePath, finalTitle, finalTags, finalIdentifier)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error renaming file: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Display the renamed note
+	renamedNote := denote.ParseNote(newPath)
+	if err := denote.DisplayNotes([]*denote.Note{renamedNote}); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+
 func main() {
 	dir := flag.String("dir", denote.DefaultDir(), "denote directory")
 	flag.Parse()
@@ -97,9 +271,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, `Denote - manage denote notes in acme
 
 Usage:
-  Denote [filters...] [sort:TYPE]   List notes matching filters
-  Denote new 'Title' [tags...]      Create a new note
-  Denote ?                          Show this help
+  Denote [filters...] [sort:TYPE]      List notes matching filters
+  Denote new 'Title' [tags...]         Create a new note
+  Denote rename /path ['Title'] [tags...]  Rename a note
+  Denote ?                             Show this help
 
 Filters:
   date:/regex/     Match date/identifier
@@ -118,11 +293,13 @@ Examples:
   Denote tag:journal                    List journal entries
   Denote date:/202510.*/ !tag:journal   October 2025, not journal
   Denote new 'My Note' tag1 tag2        Create new note
+  Denote rename /path/file.md 'New Title' tag1 tag2
 
 Options:
   -dir path    Denote directory (default: $DENOTE_DIR or ~/doc)
 
 For 'new' command help: Denote new
+For 'rename' command help: Denote rename
 `)
 		os.Exit(0)
 	}
@@ -130,6 +307,12 @@ For 'new' command help: Denote new
 	// Check if this is a "new" command
 	if len(filterArgs) > 0 && filterArgs[0] == "new" {
 		handleNew(*dir, filterArgs[1:])
+		return
+	}
+
+	// Check if this is a "rename" command
+	if len(filterArgs) > 0 && filterArgs[0] == "rename" {
+		handleRename(filterArgs[1:])
 		return
 	}
 

@@ -58,6 +58,19 @@ Denote new -f txt 'Journal Entry' journal
 
 Supported file types: `org`, `md-yaml`, `md-toml`, `txt`
 
+**Renaming notes:**
+```
+Denote rename /path/to/file.md                    # Use front matter title/tags
+Denote rename /path/to/file.md New Title          # Update title, keep tags
+Denote rename /path/to/file.md New Title tag1 tag2  # Update title and tags
+```
+
+The rename command:
+- Updates front matter (if file supports it)
+- Renames file according to denote convention
+- Preserves identifier from filename or front matter
+- Extracts title from front matter or first heading if no arguments provided
+
 ### Journal
 
 Daily journaling with automatic date-based titles.
@@ -98,7 +111,11 @@ Both commands output to a `+Denote` window with clickable file paths. Results sh
 *Creating notes:*
 1. Middle-click `Denote new 'Title' tags` in scratch window
 2. Or chord: select `'My Title' work urgent`, middle+left on `Denote new`
-2. Or chord: select `new 'My Title' work urgent`, middle+left on `Denote`
+
+*Renaming notes:*
+1. Select file path and new title/tags: `/path/to/file.md New Title tag1 tag2`
+2. Middle+left chord on `Denote rename`
+3. Or middle-click `Denote rename /path/to/file.md` to use existing front matter
 
 *Quick journal access:*
 1. Middle-click `Journal` anywhere
