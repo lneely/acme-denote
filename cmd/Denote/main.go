@@ -279,7 +279,28 @@ func main() {
 	dir := flag.String("dir", denote.DefaultDir(), "denote directory")
 	flag.Parse()
 
-	// Split args on whitespace to handle acme mouse chording
+	// Check for rename command BEFORE splitting args (to preserve spaces in paths)
+	if len(flag.Args()) > 0 {
+		firstArg := flag.Args()[0]
+		// Check if first arg starts with "rename " or is exactly "rename"
+		if strings.HasPrefix(firstArg, "rename ") {
+			// "rename /path/to/file ..." - extract everything after "rename "
+			rest := strings.TrimPrefix(firstArg, "rename ")
+			var renameArgs []string
+			if rest != "" {
+				renameArgs = append(renameArgs, rest)
+			}
+			renameArgs = append(renameArgs, flag.Args()[1:]...)
+			handleRename(renameArgs)
+			return
+		} else if firstArg == "rename" {
+			// "rename" as separate arg
+			handleRename(flag.Args()[1:])
+			return
+		}
+	}
+
+	// Split args on whitespace to handle acme mouse chording (for filters/search)
 	var filterArgs []string
 	for _, arg := range flag.Args() {
 		filterArgs = append(filterArgs, strings.Fields(arg)...)
@@ -326,12 +347,6 @@ For 'rename' command help: Denote rename
 	// Check if this is a "new" command
 	if len(filterArgs) > 0 && filterArgs[0] == "new" {
 		handleNew(*dir, filterArgs[1:])
-		return
-	}
-
-	// Check if this is a "rename" command
-	if len(filterArgs) > 0 && filterArgs[0] == "rename" {
-		handleRename(filterArgs[1:])
 		return
 	}
 
