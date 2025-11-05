@@ -96,7 +96,7 @@ func main() {
 	
 	// Find journal entries for target date by searching title
 	// Title format: "Wednesday 5 November 2025 11:01"
-	// Filename format: wednesday-5-november-2025
+	// Search pattern: "wednesday-5-november-2025" (date only, no time)
 	titlePattern := strings.ToLower(targetDate.Format("monday-2-january-2006"))
 	titleFilter, _ := denote.ParseFilter(fmt.Sprintf("title:/%s/", titlePattern))
 	tagFilter, _ := denote.ParseFilter("tag:journal")
