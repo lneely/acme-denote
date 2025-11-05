@@ -119,12 +119,24 @@ func handleRenameReturnNote(args []string) *denote.Note {
 		parts := strings.Fields(fullArg)
 		for i := len(parts); i > 0; i-- {
 			testPath := strings.Join(parts[:i], " ")
+			// Try as-is first
 			if _, err := os.Stat(testPath); err == nil {
 				filePath = testPath
 				if i < len(parts) {
 					argsAfterPath = strings.Join(parts[i:], " ")
 				}
 				break
+			}
+			// Try in denote directory if relative path
+			if !filepath.IsAbs(testPath) {
+				denotePath := filepath.Join(denote.DefaultDir(), testPath)
+				if _, err := os.Stat(denotePath); err == nil {
+					filePath = denotePath
+					if i < len(parts) {
+						argsAfterPath = strings.Join(parts[i:], " ")
+					}
+					break
+				}
 			}
 		}
 		if filePath == "" {
