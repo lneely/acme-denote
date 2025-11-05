@@ -89,9 +89,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "error: invalid date format (use YYYYMMDD): %v\n", err)
 			os.Exit(1)
 		}
-		// Use target date but with current time for the title
-		targetDate = time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
-			now.Hour(), now.Minute(), now.Second(), 0, now.Location())
 	}
 	
 	// Find journal entries for target date by searching title
@@ -116,6 +113,9 @@ func main() {
 	}
 	
 	// No entries found - create new entry for target date
+	// Use target date but with current time for the title
+	targetDate = time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
+		now.Hour(), now.Minute(), now.Second(), 0, now.Location())
 	title := formatJournalTitle(targetDate)
 	// Identifier is always the actual creation time
 	identifier := now.Format("20060102T150405")
