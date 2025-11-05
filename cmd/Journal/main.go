@@ -92,9 +92,10 @@ func main() {
 	}
 	
 	// Find journal entries for target date by searching title
-	// Title format: "Wednesday 5 November 2025 11:01"
-	// Search pattern: "wednesday-5-november-2025" (date only, no time)
-	titlePattern := strings.ToLower(targetDate.Format("monday-2-january-2006"))
+	// Title format in file: "Wednesday 5 November 2025 11:01"
+	// Title in Note struct: "wednesday 5 november 2025 1101" (hyphens converted to spaces)
+	// Search pattern: "wednesday 5 november 2025" (date only, no time, with spaces)
+	titlePattern := strings.ToLower(targetDate.Format("Monday 2 January 2006"))
 	titleFilter, _ := denote.ParseFilter(fmt.Sprintf("title:/%s/", titlePattern))
 	tagFilter, _ := denote.ParseFilter("tag:journal")
 	
