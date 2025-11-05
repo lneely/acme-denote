@@ -85,33 +85,21 @@ Note: Title must be quoted with single quotes.
 }
 
 func handleRename(args []string) {
+	note := handleRenameReturnNote(args)
+	if note != nil {
+		if err := denote.DisplayNotes([]*denote.Note{note}); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	}
+}
+
+func handleRenameReturnNote(args []string) *denote.Note {
 	fullArg := strings.Join(args, " ")
 	
 	if fullArg == "" {
-		fmt.Fprintf(os.Stderr, `Usage: rename /path/to/file ['Title'] [tag1 tag2 ...]
-
-Rename a file using denote naming convention and optionally update front matter.
-
-No arguments (just file path):
-  - Extract title and tags from front matter (if present)
-  - Apply denote naming convention to filename
-
-Title provided:
-  - Update front matter title (if file supports it)
-  - Rename file with new title
-
-Title and tags provided:
-  - Update front matter title and tags (if file supports it)
-  - Rename file with new title and tags
-
-Examples:
-  rename /path/to/file.md
-  rename /path/to/file.md 'New Title'
-  rename /path/to/file.md 'New Title' tag1 tag2
-
-Note: Title must be quoted with single quotes.
-`)
-		os.Exit(0)
+		fmt.Fprintf(os.Stderr, "error: no arguments provided to rename\n")
+		return nil
 	}
 	
 	// Extract file path - try to find where it ends
@@ -140,8 +128,8 @@ Note: Title must be quoted with single quotes.
 			}
 		}
 		if filePath == "" {
-			fmt.Fprintf(os.Stderr, "error: no valid file path found\n")
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "error: no valid file path found in: %s\n", fullArg)
+			return nil
 		}
 	}
 	
@@ -150,13 +138,13 @@ Note: Title must be quoted with single quotes.
 		filePath, err = filepath.Abs(filePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: invalid file path: %v\n", err)
-			os.Exit(1)
+			return nil
 		}
 	}
 	
 	if _, err := os.Stat(filePath); err != nil {
 		fmt.Fprintf(os.Stderr, "error: file not found: %s\n", filePath)
-		os.Exit(1)
+		return nil
 	}
 	
 	// Check if title is provided (in quotes)
@@ -207,8 +195,8 @@ Note: Title must be quoted with single quotes.
 	note := denote.ParseNote(filePath)
 	fm, err := denote.ParseFrontMatter(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading file: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "error reading file %s: %v\n", filePath, err)
+		return nil
 	}
 	
 	// Determine final title and tags
@@ -255,24 +243,21 @@ Note: Title must be quoted with single quotes.
 		fm.Identifier = finalIdentifier
 		
 		if err := denote.UpdateFrontMatter(filePath, fm); err != nil {
-			fmt.Fprintf(os.Stderr, "error updating front matter: %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "error updating front matter for %s: %v\n", filePath, err)
+			return nil
 		}
 	}
 	
 	// Rename file
 	newPath, err := denote.RenameNote(filePath, finalTitle, finalTags, finalIdentifier)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error renaming file: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "error renaming file %s: %v\n", filePath, err)
+		return nil
 	}
 	
-	// Display the renamed note
+	// Return the renamed note
 	renamedNote := denote.ParseNote(newPath)
-	if err := denote.DisplayNotes([]*denote.Note{renamedNote}); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
+	return renamedNote
 }
 
 func main() {
@@ -282,6 +267,38 @@ func main() {
 	// Check for rename command BEFORE splitting args (to preserve spaces in paths)
 	if len(flag.Args()) > 0 {
 		firstArg := flag.Args()[0]
+		
+		// Check for batch rename (multiple lines with "rename")
+		if strings.Contains(firstArg, "\n") && strings.Contains(firstArg, "rename") {
+			lines := strings.Split(firstArg, "\n")
+			var renameLines []string
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && strings.HasPrefix(line, "rename ") {
+					renameLines = append(renameLines, line)
+				}
+			}
+			if len(renameLines) > 0 {
+				// Process each rename command
+				var allNotes []*denote.Note
+				for _, line := range renameLines {
+					args := []string{strings.TrimPrefix(line, "rename ")}
+					note := handleRenameReturnNote(args)
+					if note != nil {
+						allNotes = append(allNotes, note)
+					}
+				}
+				// Display all renamed notes
+				if len(allNotes) > 0 {
+					if err := denote.DisplayNotes(allNotes); err != nil {
+						fmt.Fprintf(os.Stderr, "%v\n", err)
+						os.Exit(1)
+					}
+				}
+				return
+			}
+		}
+		
 		// Check if first arg starts with "rename " or is exactly "rename"
 		if strings.HasPrefix(firstArg, "rename ") {
 			// "rename /path/to/file ..." - extract everything after "rename "
