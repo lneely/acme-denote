@@ -114,14 +114,37 @@ Note: Title must be quoted with single quotes.
 		os.Exit(0)
 	}
 	
-	// Extract file path (first argument before any quotes)
-	parts := strings.Fields(fullArg)
-	if len(parts) == 0 {
-		fmt.Fprintf(os.Stderr, "error: no file path provided\n")
-		os.Exit(1)
+	// Extract file path - try to find where it ends
+	// Strategy: file path is everything before the first quoted title or until we find an existing file
+	var filePath string
+	var argsAfterPath string
+	
+	// Check if there's a quoted title
+	titleRe := regexp.MustCompile(`'([^']+)'`)
+	if m := titleRe.FindStringIndex(fullArg); m != nil {
+		// Everything before the quote is the file path
+		filePath = strings.TrimSpace(fullArg[:m[0]])
+		argsAfterPath = strings.TrimSpace(fullArg[m[0]:])
+	} else {
+		// No quoted title - try to find where file path ends by checking what exists
+		// Start with the whole string and work backwards
+		parts := strings.Fields(fullArg)
+		for i := len(parts); i > 0; i-- {
+			testPath := strings.Join(parts[:i], " ")
+			if _, err := os.Stat(testPath); err == nil {
+				filePath = testPath
+				if i < len(parts) {
+					argsAfterPath = strings.Join(parts[i:], " ")
+				}
+				break
+			}
+		}
+		if filePath == "" {
+			fmt.Fprintf(os.Stderr, "error: no valid file path found\n")
+			os.Exit(1)
+		}
 	}
 	
-	filePath := parts[0]
 	if !filepath.IsAbs(filePath) {
 		var err error
 		filePath, err = filepath.Abs(filePath)
@@ -136,11 +159,7 @@ Note: Title must be quoted with single quotes.
 		os.Exit(1)
 	}
 	
-	// Get arguments after file path
-	argsAfterPath := strings.TrimSpace(strings.TrimPrefix(fullArg, parts[0]))
-	
 	// Check if title is provided (in quotes)
-	titleRe := regexp.MustCompile(`'([^']+)'`)
 	m := titleRe.FindStringSubmatch(argsAfterPath)
 	
 	var newTitle string
