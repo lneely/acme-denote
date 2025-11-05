@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"denote/internal/denote"
@@ -93,11 +94,14 @@ func main() {
 			now.Hour(), now.Minute(), now.Second(), 0, now.Location())
 	}
 	
-	// Find journal entries for target date
-	dateFilter, _ := denote.ParseFilter(fmt.Sprintf("date:%s", targetDate.Format("20060102")))
+	// Find journal entries for target date by searching title
+	// Title format: "Wednesday 5 November 2025 11:01"
+	// Filename format: wednesday-5-november-2025
+	titlePattern := strings.ToLower(targetDate.Format("monday-2-january-2006"))
+	titleFilter, _ := denote.ParseFilter(fmt.Sprintf("title:/%s/", titlePattern))
 	tagFilter, _ := denote.ParseFilter("tag:journal")
 	
-	notes, err := denote.FindNotes(dir, []*denote.Filter{dateFilter, tagFilter})
+	notes, err := denote.FindNotes(dir, []*denote.Filter{titleFilter, tagFilter})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error searching for journal: %v\n", err)
 		os.Exit(1)
