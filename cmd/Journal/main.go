@@ -42,43 +42,16 @@ func main() {
 
 	now := time.Now()
 
+	// Determine target date and action
+	var targetDate time.Time
+	createNew := false
+	
 	if len(args) == 0 {
-		// Journal - find or create today's entry
-		dateFilter, _ := denote.ParseFilter(fmt.Sprintf("date:%s", now.Format("20060102")))
-		tagFilter, _ := denote.ParseFilter("tag:journal")
-
-		notes, err := denote.FindNotes(dir, []*denote.Filter{dateFilter, tagFilter})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error searching for journal: %v\n", err)
-			os.Exit(1)
-		}
-
-		if len(notes) > 0 {
-			if err := denote.DisplayNotes(notes); err != nil {
-				fmt.Fprintf(os.Stderr, "%v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-
-		// Create new entry for today
-		title := formatJournalTitle(now)
-		path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, "")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error creating journal entry: %v\n", err)
-			os.Exit(1)
-		}
-		note := denote.ParseNote(path)
-		if err := denote.DisplayNotes([]*denote.Note{note}); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	if args[0] == "add" {
-		// Journal add [YYYYMMDD]
-		var targetDate time.Time
+		// No args - today
+		targetDate = now
+	} else if args[0] == "add" {
+		// Journal add [YYYYMMDD] - always create new entry
+		createNew = true
 		var identifier string
 
 		if len(args) > 1 {
@@ -109,9 +82,49 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	} else {
+		// Assume it's a date argument (YYYYMMDD)
+		var err error
+		targetDate, err = parseDate(args[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: invalid date format (use YYYYMMDD): %v\n", err)
+			os.Exit(1)
+		}
 	}
-
-	fmt.Fprintf(os.Stderr, "Usage:\n  Journal                 Find or create today's entry\n  Journal add             Create additional entry for today\n  Journal add DATE        Create entry for specific date (YYYYMMDD)\n")
-	os.Exit(1)
+	
+	// Find journal entries for target date
+	dateFilter, _ := denote.ParseFilter(fmt.Sprintf("date:%s", targetDate.Format("20060102")))
+	tagFilter, _ := denote.ParseFilter("tag:journal")
+	
+	notes, err := denote.FindNotes(dir, []*denote.Filter{dateFilter, tagFilter})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error searching for journal: %v\n", err)
+		os.Exit(1)
+	}
+	
+	if len(notes) > 0 {
+		if err := denote.DisplayNotes(notes); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	
+	// No entries found - create new entry for target date (only if today or explicitly requested)
+	if createNew || targetDate.Format("20060102") == now.Format("20060102") {
+		title := formatJournalTitle(targetDate)
+		path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error creating journal entry: %v\n", err)
+			os.Exit(1)
+		}
+		note := denote.ParseNote(path)
+		if err := denote.DisplayNotes([]*denote.Note{note}); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "No journal entries found for %s\n", targetDate.Format("2006-01-02"))
+	}
 }
 
