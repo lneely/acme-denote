@@ -280,13 +280,17 @@ func main() {
 	if len(flag.Args()) > 0 {
 		firstArg := flag.Args()[0]
 		
-		// Check for batch rename (multiple lines with "rename")
-		if strings.Contains(firstArg, "\n") && strings.Contains(firstArg, "rename") {
+		// Check for batch rename (multiple lines with "rename" or "r")
+		if strings.Contains(firstArg, "\n") && (strings.Contains(firstArg, "rename") || strings.Contains(firstArg, "\nr") || strings.HasPrefix(firstArg, "r ")) {
 			lines := strings.Split(firstArg, "\n")
 			var renameLines []string
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
-				if line != "" && strings.HasPrefix(line, "rename ") {
+				if line != "" && (strings.HasPrefix(line, "rename ") || strings.HasPrefix(line, "r ")) {
+					// Normalize "r " to "rename "
+					if strings.HasPrefix(line, "r ") {
+						line = "rename " + strings.TrimPrefix(line, "r ")
+					}
 					renameLines = append(renameLines, line)
 				}
 			}
@@ -311,10 +315,15 @@ func main() {
 			}
 		}
 		
-		// Check if first arg starts with "rename " or is exactly "rename"
-		if strings.HasPrefix(firstArg, "rename ") {
-			// "rename /path/to/file ..." - extract everything after "rename "
-			rest := strings.TrimPrefix(firstArg, "rename ")
+		// Check if first arg starts with "rename " or "r " or is exactly "rename" or "r"
+		if strings.HasPrefix(firstArg, "rename ") || strings.HasPrefix(firstArg, "r ") {
+			// Extract everything after "rename " or "r "
+			var rest string
+			if strings.HasPrefix(firstArg, "rename ") {
+				rest = strings.TrimPrefix(firstArg, "rename ")
+			} else {
+				rest = strings.TrimPrefix(firstArg, "r ")
+			}
 			var renameArgs []string
 			if rest != "" {
 				renameArgs = append(renameArgs, rest)
@@ -322,8 +331,8 @@ func main() {
 			renameArgs = append(renameArgs, flag.Args()[1:]...)
 			handleRename(renameArgs)
 			return
-		} else if firstArg == "rename" {
-			// "rename" as separate arg
+		} else if firstArg == "rename" || firstArg == "r" {
+			// "rename" or "r" as separate arg
 			handleRename(flag.Args()[1:])
 			return
 		}
@@ -342,7 +351,9 @@ func main() {
 Usage:
   Denote [filters...] [sort:TYPE]      List notes matching filters
   Denote new 'Title' [tags...]         Create a new note
+  Denote + 'Title' [tags...]           Alias for new
   Denote rename /path ['Title'] [tags...]  Rename a note
+  Denote r /path ['Title'] [tags...]   Alias for rename
   Denote ?                             Show this help
 
 Filters:
@@ -373,8 +384,8 @@ For 'rename' command help: Denote rename
 		os.Exit(0)
 	}
 
-	// Check if this is a "new" command
-	if len(filterArgs) > 0 && filterArgs[0] == "new" {
+	// Check if this is a "new" command (or "+" alias)
+	if len(filterArgs) > 0 && (filterArgs[0] == "new" || filterArgs[0] == "+") {
 		handleNew(*dir, filterArgs[1:])
 		return
 	}
