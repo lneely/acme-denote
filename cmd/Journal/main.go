@@ -89,6 +89,9 @@ func main() {
 				os.Exit(1)
 			}
 			identifier = targetDate.Format("20060102") + "T" + now.Format("150405")
+			// Use target date but with current time for the title
+			targetDate = time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
+				now.Hour(), now.Minute(), now.Second(), 0, now.Location())
 		} else {
 			targetDate = now
 			identifier = now.Format("20060102T150405")
