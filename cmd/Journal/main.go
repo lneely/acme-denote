@@ -113,7 +113,8 @@ func main() {
 	
 	// No entries found - create new entry for target date
 	title := formatJournalTitle(targetDate)
-	identifier := targetDate.Format("20060102") + "T" + now.Format("150405")
+	// Identifier is always the actual creation time
+	identifier := now.Format("20060102T150405")
 	path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, identifier)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating journal entry: %v\n", err)
