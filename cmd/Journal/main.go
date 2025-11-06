@@ -28,11 +28,70 @@ func parseDate(dateStr string) (time.Time, error) {
 	return time.Parse("20060102", dateStr)
 }
 
+func parseRelativeDate(relStr string, now time.Time) (time.Time, error) {
+	// Parse relative date like +1d, -3d, +2h, -5m, +30s
+	if len(relStr) < 3 {
+		return time.Time{}, fmt.Errorf("invalid relative date format")
+	}
+	
+	sign := relStr[0]
+	if sign != '+' && sign != '-' {
+		return time.Time{}, fmt.Errorf("relative date must start with + or -")
+	}
+	
+	unit := relStr[len(relStr)-1]
+	numStr := relStr[1 : len(relStr)-1]
+	
+	num := 0
+	_, err := fmt.Sscanf(numStr, "%d", &num)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid number in relative date: %v", err)
+	}
+	
+	if sign == '-' {
+		num = -num
+	}
+	
+	var result time.Time
+	switch unit {
+	case 'd':
+		result = now.AddDate(0, 0, num)
+	case 'h':
+		result = now.Add(time.Duration(num) * time.Hour)
+	case 'm':
+		result = now.Add(time.Duration(num) * time.Minute)
+	case 's':
+		result = now.Add(time.Duration(num) * time.Second)
+	default:
+		return time.Time{}, fmt.Errorf("invalid unit: %c (use d, h, m, or s)", unit)
+	}
+	
+	return result, nil
+}
+
 func main() {
+	// Check for relative date arguments before flag parsing (to avoid -1d being treated as flag)
+	var relativeArg string
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		if (strings.HasPrefix(arg, "+") || strings.HasPrefix(arg, "-")) && 
+		   len(arg) >= 3 && 
+		   (arg[len(arg)-1] == 'd' || arg[len(arg)-1] == 'h' || arg[len(arg)-1] == 'm' || arg[len(arg)-1] == 's') {
+			// This is a relative date, remove it from os.Args before flag parsing
+			relativeArg = arg
+			os.Args = append(os.Args[:1], os.Args[2:]...)
+		}
+	}
+	
 	fileType := flag.String("f", "md-yaml", "file type (org, md-yaml, md-toml, txt)")
 	flag.Parse()
 
 	args := flag.Args()
+	
+	// If we had a relative arg, prepend it back to args
+	if relativeArg != "" {
+		args = append([]string{relativeArg}, args...)
+	}
 	dir := journalDir()
 
 	// Ensure journal directory exists
@@ -82,12 +141,22 @@ func main() {
 		}
 		return
 	} else {
-		// Assume it's a date argument (YYYYMMDD)
+		// Check if it's a relative date (+1d, -3h, etc.) or absolute date (YYYYMMDD)
 		var err error
-		targetDate, err = parseDate(args[0])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: invalid date format (use YYYYMMDD): %v\n", err)
-			os.Exit(1)
+		if strings.HasPrefix(args[0], "+") || strings.HasPrefix(args[0], "-") {
+			// Relative date
+			targetDate, err = parseRelativeDate(args[0], now)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: invalid relative date format: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			// Absolute date (YYYYMMDD)
+			targetDate, err = parseDate(args[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: invalid date format (use YYYYMMDD or +/-Nd/h/m/s): %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 	
