@@ -78,9 +78,21 @@ Daily journaling with automatic date-based titles.
 **Usage in acme:**
 ```
 Journal              # Find or create today's entry
+Journal 20251025     # Find or create entry for specific date (YYYYMMDD)
+Journal +1d          # Tomorrow
+Journal -1d          # Yesterday
+Journal +3d          # 3 days from now
+Journal +2h          # 2 hours from now
+Journal -30m         # 30 minutes ago
 Journal add          # Create additional entry for today
 Journal add 20251025 # Create entry for specific date (YYYYMMDD)
 ```
+
+**Relative dates:**
+- `+/-Nd` - days (e.g., `+1d`, `-7d`)
+- `+/-Nh` - hours (e.g., `+2h`, `-5h`)
+- `+/-Nm` - minutes (e.g., `+15m`, `-30m`)
+- `+/-Ns` - seconds (e.g., `+30s`, `-45s`)
 
 Journal entries are automatically:
 - Titled with format: "Monday 3 November 2025 16:56"
