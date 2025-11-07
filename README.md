@@ -161,6 +161,17 @@ mk install
 
 Installs `Denote` and `Journal` to `~/bin/`.
 
+### GPG File Support
+
+For encrypted `.gpg` files, install [acme-crypt](https://github.com/lneely/acme-crypt):
+
+```bash
+git clone https://github.com/lneely/acme-crypt
+cd acme-crypt && mk install
+```
+
+acme-denote will automatically detect `.gpg` files and use `CryptGet` to open them with decryption support in acme.
+
 ## Front Matter
 
 Notes include front matter based on file type:
