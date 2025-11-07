@@ -233,11 +233,8 @@ func DisplayNotes(notes []*Note) error {
 			title = "(untitled)"
 		}
 		
-		buf.WriteString(title)
-		if len(n.Keywords) > 0 {
-			fmt.Fprintf(&buf, " (%s)", strings.Join(n.Keywords, ", "))
-		}
-		fmt.Fprintf(&buf, "\n%s\n\n", n.Path)
+		tags := strings.Join(n.Keywords, ", ")
+		fmt.Fprintf(&buf, "denote:%s | %s | %s\n", n.Identifier, title, tags)
 	}
 
 	w.Write("body", []byte(buf.String()))

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -272,6 +273,44 @@ func handleRenameReturnNote(args []string) *denote.Note {
 	return renamedNote
 }
 
+func handleOpen(dir string, args []string) {
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: open <identifier>\n\nOpen a note by its identifier.\n\nExample:\n  open 20251016T091314\n")
+		os.Exit(0)
+	}
+	
+	identifier := args[0]
+	
+	// Search for note with this identifier
+	identFilter, err := denote.ParseFilter(fmt.Sprintf("date:%s", identifier))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: invalid identifier: %v\n", err)
+		os.Exit(1)
+	}
+	
+	notes, err := denote.FindNotes(dir, []*denote.Filter{identFilter})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error searching for note: %v\n", err)
+		os.Exit(1)
+	}
+	
+	if len(notes) == 0 {
+		fmt.Fprintf(os.Stderr, "error: no note found with identifier %s\n", identifier)
+		os.Exit(1)
+	}
+	
+	if len(notes) > 1 {
+		fmt.Fprintf(os.Stderr, "warning: multiple notes found with identifier %s, opening first\n", identifier)
+	}
+	
+	// Open the file in acme using plumb
+	cmd := exec.Command("plumb", notes[0].Path)
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error opening file: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func main() {
 	dir := flag.String("dir", denote.DefaultDir(), "denote directory")
 	flag.Parse()
@@ -354,6 +393,7 @@ Usage:
   Denote + 'Title' [tags...]           Alias for new
   Denote rename /path ['Title'] [tags...]  Rename a note
   Denote r /path ['Title'] [tags...]   Alias for rename
+  Denote open <identifier>             Open note by identifier
   Denote ?                             Show this help
 
 Filters:
@@ -387,6 +427,12 @@ For 'rename' command help: Denote rename
 	// Check if this is a "new" command (or "+" alias)
 	if len(filterArgs) > 0 && (filterArgs[0] == "new" || filterArgs[0] == "+") {
 		handleNew(*dir, filterArgs[1:])
+		return
+	}
+
+	// Check if this is an "open" command
+	if len(filterArgs) > 0 && filterArgs[0] == "open" {
+		handleOpen(*dir, filterArgs[1:])
 		return
 	}
 
