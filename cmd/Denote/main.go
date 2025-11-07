@@ -13,6 +13,30 @@ import (
 	"denote/internal/denote"
 )
 
+// checkCryptGetAvailable checks if CryptGet is installed and available
+func checkCryptGetAvailable() bool {
+	_, err := exec.LookPath("CryptGet")
+	return err == nil
+}
+
+// openFile opens a file using the appropriate method based on file extension
+func openFile(filePath string) error {
+	if strings.HasSuffix(strings.ToLower(filePath), ".gpg") {
+		// Handle .gpg files with CryptGet
+		if !checkCryptGetAvailable() {
+			fmt.Fprintf(os.Stderr, "CryptGet is not installed.\ngit clone https://github.com/lneely/acme-crypt\n")
+			return fmt.Errorf("CryptGet not available")
+		}
+		
+		cmd := exec.Command("CryptGet", filePath)
+		return cmd.Run()
+	} else {
+		// Use normal plumb for non-encrypted files
+		cmd := exec.Command("plumb", filePath)
+		return cmd.Run()
+	}
+}
+
 func handleNew(dir string, args []string) {
 	// Rejoin args in case acme split them oddly
 	fullArg := strings.Join(args, " ")
@@ -303,9 +327,8 @@ func handleOpen(dir string, args []string) {
 		fmt.Fprintf(os.Stderr, "warning: multiple notes found with identifier %s, opening first\n", identifier)
 	}
 	
-	// Open the file in acme using plumb
-	cmd := exec.Command("plumb", notes[0].Path)
-	if err := cmd.Run(); err != nil {
+	// Open the file using appropriate method (CryptGet for .gpg files, plumb for others)
+	if err := openFile(notes[0].Path); err != nil {
 		fmt.Fprintf(os.Stderr, "error opening file: %v\n", err)
 		os.Exit(1)
 	}
