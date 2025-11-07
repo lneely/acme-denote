@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -13,83 +12,11 @@ import (
 	"denote/internal/denote"
 )
 
-// checkCryptGetAvailable checks if CryptGet is installed and available
-func checkCryptGetAvailable() bool {
-	_, err := exec.LookPath("CryptGet")
-	return err == nil
-}
-
-// openFile opens a file using the appropriate method based on file extension
-func openFile(filePath string) error {
-	if strings.HasSuffix(strings.ToLower(filePath), ".gpg") {
-		// Handle .gpg files with CryptGet
-		if !checkCryptGetAvailable() {
-			fmt.Fprintf(os.Stderr, "CryptGet is not installed.\ngit clone https://github.com/lneely/acme-crypt\n")
-			return fmt.Errorf("CryptGet not available")
-		}
-		
-		cmd := exec.Command("CryptGet", filePath)
-		return cmd.Run()
-	} else {
-		// Use normal plumb for non-encrypted files
-		cmd := exec.Command("plumb", filePath)
-		return cmd.Run()
-	}
-}
-
-// createEncryptedNote creates a new encrypted denote note using CryptPut
-func createEncryptedNote(dir, title string, keywords []string, fileType string) (string, error) {
-	// Check if CryptPut is available
-	if _, err := exec.LookPath("CryptPut"); err != nil {
-		return "", fmt.Errorf("CryptPut is not installed.\ngit clone https://github.com/lneely/acme-crypt")
-	}
-	
-	// Check if ACME_CRYPT_RCPT is set
-	if os.Getenv("ACME_CRYPT_RCPT") == "" {
-		return "", fmt.Errorf("ACME_CRYPT_RCPT environment variable is not set.\nSet it to your GPG recipient email: export ACME_CRYPT_RCPT=\"your@email.com\"")
-	}
-	
-	// Generate identifier
-	identifier := time.Now().Format("20060102T150405")
-	
-	// Format file name (without .gpg extension - CryptPut will add it)
-	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
-	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
-	
-	var keywordsPart string
-	if len(keywords) > 0 {
-		keywordsPart = "__" + strings.Join(keywords, "_")
-	}
-	
-	ext := denote.FileExtensions[fileType]
-	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
-	plainPath := filepath.Join(dir, filename)
-	
-	// Generate front matter content
-	template := denote.FrontMatterTemplates[fileType]
-	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
-	keywordsStr := denote.FormatKeywords(keywords, fileType)
-	
-	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, "")
-	
-	// Use CryptPut to create encrypted file
-	cmd := exec.Command("CryptPut", plainPath)
-	cmd.Stdin = strings.NewReader(content)
-	
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to create encrypted file: %v", err)
-	}
-	
-	// CryptPut creates the file with .gpg extension
-	encryptedPath := plainPath + ".gpg"
-	
-	return encryptedPath, nil
-}
 
 func handleNew(dir string, args []string) {
 	// Rejoin args in case acme split them oddly
 	fullArg := strings.Join(args, " ")
-	
+
 	// Show usage if no arguments
 	if fullArg == "" {
 		fmt.Fprintf(os.Stderr, `Usage: new [-f type] [-e] 'Title' [tag1 tag2 ...]
@@ -111,10 +38,10 @@ Note: Title must be quoted with single quotes.
 `)
 		os.Exit(0)
 	}
-	
+
 	fileType := "md-yaml"
 	encrypt := false
-	
+
 	// Parse flags
 	for {
 		if strings.HasPrefix(fullArg, "-f ") {
@@ -141,7 +68,7 @@ Note: Title must be quoted with single quotes.
 			break
 		}
 	}
-	
+
 	// Extract title between single quotes
 	titleRe := regexp.MustCompile(`'([^']+)'`)
 	m := titleRe.FindStringSubmatch(fullArg)
@@ -150,21 +77,21 @@ Note: Title must be quoted with single quotes.
 		os.Exit(1)
 	}
 	title := m[1]
-	
+
 	// Extract keywords (everything after the closing quote)
 	afterTitle := strings.TrimSpace(fullArg[strings.Index(fullArg, m[0])+len(m[0]):])
 	var keywords []string
 	if afterTitle != "" {
 		keywords = strings.Fields(afterTitle)
 	}
-	
+
 	// Create the note
 	var path string
 	var err error
-	
+
 	if encrypt {
-		// Create encrypted note using CryptPut
-		path, err = createEncryptedNote(dir, title, keywords, fileType)
+		// Create encrypted note using shared function
+		path, err = denote.CreateEncryptedNote(dir, title, keywords, fileType, "")
 	} else {
 		// Create regular note
 		path, err = denote.CreateNote(dir, title, keywords, fileType, "")
@@ -173,7 +100,7 @@ Note: Title must be quoted with single quotes.
 		fmt.Fprintf(os.Stderr, "error creating note: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	// Display the newly created note
 	note := denote.ParseNote(path)
 	if err := denote.DisplayNotes([]*denote.Note{note}); err != nil {
@@ -194,17 +121,17 @@ func handleRename(args []string) {
 
 func handleRenameReturnNote(args []string) *denote.Note {
 	fullArg := strings.Join(args, " ")
-	
+
 	if fullArg == "" {
 		fmt.Fprintf(os.Stderr, "error: no arguments provided to rename\n")
 		return nil
 	}
-	
+
 	// Extract file path - try to find where it ends
 	// Strategy: file path is everything before the first quoted title or until we find an existing file
 	var filePath string
 	var argsAfterPath string
-	
+
 	// Check if there's a quoted title
 	titleRe := regexp.MustCompile(`'([^']+)'`)
 	if m := titleRe.FindStringIndex(fullArg); m != nil {
@@ -242,7 +169,7 @@ func handleRenameReturnNote(args []string) *denote.Note {
 			return nil
 		}
 	}
-	
+
 	if !filepath.IsAbs(filePath) {
 		var err error
 		filePath, err = filepath.Abs(filePath)
@@ -251,22 +178,22 @@ func handleRenameReturnNote(args []string) *denote.Note {
 			return nil
 		}
 	}
-	
+
 	if _, err := os.Stat(filePath); err != nil {
 		fmt.Fprintf(os.Stderr, "error: file not found: %s\n", filePath)
 		return nil
 	}
-	
+
 	// Check if title is provided (in quotes)
 	m := titleRe.FindStringSubmatch(argsAfterPath)
-	
+
 	var newTitle string
 	var newTags []string
-	
+
 	if m != nil {
 		// Title provided with quotes
 		newTitle = m[1]
-		
+
 		// Extract tags (everything after the closing quote)
 		afterTitle := strings.TrimSpace(argsAfterPath[strings.Index(argsAfterPath, m[0])+len(m[0]):])
 		if afterTitle != "" {
@@ -289,7 +216,7 @@ func handleRenameReturnNote(args []string) *denote.Note {
 					break
 				}
 			}
-			
+
 			// If we found potential tags
 			if titleEnd < len(argParts) {
 				newTitle = strings.Join(argParts[:titleEnd], " ")
@@ -300,7 +227,7 @@ func handleRenameReturnNote(args []string) *denote.Note {
 			}
 		}
 	}
-	
+
 	// Parse existing file
 	note := denote.ParseNote(filePath)
 	fm, err := denote.ParseFrontMatter(filePath)
@@ -308,12 +235,12 @@ func handleRenameReturnNote(args []string) *denote.Note {
 		fmt.Fprintf(os.Stderr, "error reading file %s: %v\n", filePath, err)
 		return nil
 	}
-	
+
 	// Determine final title and tags
 	finalTitle := newTitle
 	finalTags := newTags
 	finalIdentifier := note.Identifier
-	
+
 	if finalTitle == "" {
 		// No title argument - use front matter or filename
 		if fm.Title != "" {
@@ -327,7 +254,7 @@ func handleRenameReturnNote(args []string) *denote.Note {
 			finalTitle = strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
 		}
 	}
-	
+
 	if len(finalTags) == 0 {
 		// No tags argument - use front matter or filename tags
 		if len(fm.Tags) > 0 {
@@ -336,7 +263,7 @@ func handleRenameReturnNote(args []string) *denote.Note {
 			finalTags = note.Keywords
 		}
 	}
-	
+
 	if finalIdentifier == "" {
 		// No identifier in filename - use from front matter or generate new
 		if fm.Identifier != "" {
@@ -345,26 +272,26 @@ func handleRenameReturnNote(args []string) *denote.Note {
 			finalIdentifier = time.Now().Format("20060102T150405")
 		}
 	}
-	
+
 	// Update front matter if file supports it and we have new values
 	if fm.FileType != "" && (newTitle != "" || len(newTags) > 0) {
 		fm.Title = finalTitle
 		fm.Tags = finalTags
 		fm.Identifier = finalIdentifier
-		
+
 		if err := denote.UpdateFrontMatter(filePath, fm); err != nil {
 			fmt.Fprintf(os.Stderr, "error updating front matter for %s: %v\n", filePath, err)
 			return nil
 		}
 	}
-	
+
 	// Rename file
 	newPath, err := denote.RenameNote(filePath, finalTitle, finalTags, finalIdentifier)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error renaming file %s: %v\n", filePath, err)
 		return nil
 	}
-	
+
 	// Return the renamed note
 	renamedNote := denote.ParseNote(newPath)
 	return renamedNote
@@ -375,33 +302,33 @@ func handleOpen(dir string, args []string) {
 		fmt.Fprintf(os.Stderr, "Usage: open <identifier>\n\nOpen a note by its identifier.\n\nExample:\n  open 20251016T091314\n")
 		os.Exit(0)
 	}
-	
+
 	identifier := args[0]
-	
+
 	// Search for note with this identifier
 	identFilter, err := denote.ParseFilter(fmt.Sprintf("date:%s", identifier))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: invalid identifier: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	notes, err := denote.FindNotes(dir, []*denote.Filter{identFilter})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error searching for note: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	if len(notes) == 0 {
 		fmt.Fprintf(os.Stderr, "error: no note found with identifier %s\n", identifier)
 		os.Exit(1)
 	}
-	
+
 	if len(notes) > 1 {
 		fmt.Fprintf(os.Stderr, "warning: multiple notes found with identifier %s, opening first\n", identifier)
 	}
-	
+
 	// Open the file using appropriate method (CryptGet for .gpg files, plumb for others)
-	if err := openFile(notes[0].Path); err != nil {
+	if err := denote.OpenFile(notes[0].Path); err != nil {
 		fmt.Fprintf(os.Stderr, "error opening file: %v\n", err)
 		os.Exit(1)
 	}
@@ -414,7 +341,7 @@ func main() {
 	// Check for rename command BEFORE splitting args (to preserve spaces in paths)
 	if len(flag.Args()) > 0 {
 		firstArg := flag.Args()[0]
-		
+
 		// Check for batch rename (multiple lines with "rename" or "r")
 		if strings.Contains(firstArg, "\n") && (strings.Contains(firstArg, "rename") || strings.Contains(firstArg, "\nr") || strings.HasPrefix(firstArg, "r ")) {
 			lines := strings.Split(firstArg, "\n")
@@ -449,7 +376,7 @@ func main() {
 				return
 			}
 		}
-		
+
 		// Check if first arg starts with "rename " or "r " or is exactly "rename" or "r"
 		if strings.HasPrefix(firstArg, "rename ") || strings.HasPrefix(firstArg, "r ") {
 			// Extract everything after "rename " or "r "
@@ -546,7 +473,7 @@ For 'rename' command help: Denote rename
 			}
 			continue
 		}
-		
+
 		filt, err := denote.ParseFilter(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)

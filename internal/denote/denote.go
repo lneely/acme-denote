@@ -3,6 +3,7 @@ package denote
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -598,5 +599,89 @@ func RenameNote(oldPath, title string, keywords []string, identifier string) (st
 	}
 	
 	return newPath, nil
+}
+
+// CheckCryptPutAvailable checks if CryptPut is installed and available
+func CheckCryptPutAvailable() error {
+	_, err := exec.LookPath("CryptPut")
+	if err != nil {
+		return fmt.Errorf("CryptPut is not installed.\ngit clone https://github.com/lneely/acme-crypt")
+	}
+	return nil
+}
+
+// CheckCryptGetAvailable checks if CryptGet is installed and available
+func CheckCryptGetAvailable() bool {
+	_, err := exec.LookPath("CryptGet")
+	return err == nil
+}
+
+// CreateEncryptedNote creates a new encrypted denote note using CryptPut
+func CreateEncryptedNote(dir, title string, keywords []string, fileType, identifier string) (string, error) {
+	// Check if CryptPut is available
+	if err := CheckCryptPutAvailable(); err != nil {
+		return "", err
+	}
+	
+	// Check if ACME_CRYPT_RCPT is set
+	if os.Getenv("ACME_CRYPT_RCPT") == "" {
+		return "", fmt.Errorf("ACME_CRYPT_RCPT environment variable is not set.\nSet it to your GPG recipient email: export ACME_CRYPT_RCPT=\"your@email.com\"")
+	}
+	
+	// Use provided identifier or generate new one
+	if identifier == "" {
+		identifier = time.Now().Format("20060102T150405")
+	}
+	
+	// Format file name (without .gpg extension - CryptPut will add it)
+	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
+	
+	var keywordsPart string
+	if len(keywords) > 0 {
+		keywordsPart = "__" + strings.Join(keywords, "_")
+	}
+	
+	ext := FileExtensions[fileType]
+	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+	plainPath := filepath.Join(dir, filename)
+	
+	// Generate front matter content
+	template := FrontMatterTemplates[fileType]
+	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
+	keywordsStr := FormatKeywords(keywords, fileType)
+	
+	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, "")
+	
+	// Use CryptPut to create encrypted file
+	cmd := exec.Command("CryptPut", plainPath)
+	cmd.Stdin = strings.NewReader(content)
+	
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to create encrypted file: %v", err)
+	}
+	
+	// CryptPut creates the file with .gpg extension
+	encryptedPath := plainPath + ".gpg"
+	
+	return encryptedPath, nil
+}
+
+// OpenFile opens a file using the appropriate method based on file extension
+func OpenFile(filePath string) error {
+	if strings.HasSuffix(strings.ToLower(filePath), ".gpg") {
+		// Handle .gpg files with CryptGet
+		if !CheckCryptGetAvailable() {
+			fmt.Fprintf(os.Stderr, "CryptGet is not installed.\ngit clone https://github.com/lneely/acme-crypt\n")
+			return fmt.Errorf("CryptGet not available")
+		}
+		
+		cmd := exec.Command("CryptGet", filePath)
+		return cmd.Run()
+	} else {
+		// Use normal plumb for non-encrypted files
+		cmd := exec.Command("plumb", filePath)
+		return cmd.Run()
+	}
 }
 
