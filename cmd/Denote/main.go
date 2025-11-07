@@ -37,24 +37,75 @@ func openFile(filePath string) error {
 	}
 }
 
+// createEncryptedNote creates a new encrypted denote note using CryptPut
+func createEncryptedNote(dir, title string, keywords []string, fileType string) (string, error) {
+	// Check if CryptPut is available
+	if _, err := exec.LookPath("CryptPut"); err != nil {
+		return "", fmt.Errorf("CryptPut is not installed.\ngit clone https://github.com/lneely/acme-crypt")
+	}
+	
+	// Check if ACME_CRYPT_RCPT is set
+	if os.Getenv("ACME_CRYPT_RCPT") == "" {
+		return "", fmt.Errorf("ACME_CRYPT_RCPT environment variable is not set.\nSet it to your GPG recipient email: export ACME_CRYPT_RCPT=\"your@email.com\"")
+	}
+	
+	// Generate identifier
+	identifier := time.Now().Format("20060102T150405")
+	
+	// Format file name (without .gpg extension - CryptPut will add it)
+	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
+	
+	var keywordsPart string
+	if len(keywords) > 0 {
+		keywordsPart = "__" + strings.Join(keywords, "_")
+	}
+	
+	ext := denote.FileExtensions[fileType]
+	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+	plainPath := filepath.Join(dir, filename)
+	
+	// Generate front matter content
+	template := denote.FrontMatterTemplates[fileType]
+	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
+	keywordsStr := denote.FormatKeywords(keywords, fileType)
+	
+	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, "")
+	
+	// Use CryptPut to create encrypted file
+	cmd := exec.Command("CryptPut", plainPath)
+	cmd.Stdin = strings.NewReader(content)
+	
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to create encrypted file: %v", err)
+	}
+	
+	// CryptPut creates the file with .gpg extension
+	encryptedPath := plainPath + ".gpg"
+	
+	return encryptedPath, nil
+}
+
 func handleNew(dir string, args []string) {
 	// Rejoin args in case acme split them oddly
 	fullArg := strings.Join(args, " ")
 	
 	// Show usage if no arguments
 	if fullArg == "" {
-		fmt.Fprintf(os.Stderr, `Usage: new [-f type] 'Title' [tag1 tag2 ...]
+		fmt.Fprintf(os.Stderr, `Usage: new [-f type] [-e] 'Title' [tag1 tag2 ...]
 
 Create a new denote note with the given title and optional tags.
 
 Options:
-  -f type    File type (default: md-yaml)
-             Supported: org, md-yaml, md-toml, txt
+  -f type       File type (default: md-yaml)
+                Supported: org, md-yaml, md-toml, txt
+  -e            Encrypt the file
 
 Examples:
   new 'My Document Title' tag1 tag2
   new -f org 'Meeting Notes' meeting project
-  new -f txt 'Journal Entry' journal
+  new -e 'Secret Document' confidential
+  new -f txt -e 'Journal Entry' journal
 
 Note: Title must be quoted with single quotes.
 `)
@@ -62,19 +113,32 @@ Note: Title must be quoted with single quotes.
 	}
 	
 	fileType := "md-yaml"
+	encrypt := false
 	
-	// Check for -f flag
-	if strings.HasPrefix(fullArg, "-f ") {
-		parts := strings.SplitN(fullArg, " ", 3)
-		if len(parts) < 3 {
-			fmt.Fprintf(os.Stderr, "error: missing arguments after -f\nUsage: new [-f type] 'Title' [tag1 tag2 ...]\n")
-			os.Exit(1)
-		}
-		fileType = parts[1]
-		fullArg = parts[2]
-		if _, ok := denote.FrontMatterTemplates[fileType]; !ok {
-			fmt.Fprintf(os.Stderr, "error: unsupported file type: %s\nSupported: org, md-yaml, md-toml, txt\n", fileType)
-			os.Exit(1)
+	// Parse flags
+	for {
+		if strings.HasPrefix(fullArg, "-f ") {
+			parts := strings.SplitN(fullArg, " ", 3)
+			if len(parts) < 3 {
+				fmt.Fprintf(os.Stderr, "error: missing arguments after -f\nUsage: new [-f type] [-e] 'Title' [tag1 tag2 ...]\n")
+				os.Exit(1)
+			}
+			fileType = parts[1]
+			fullArg = parts[2]
+			if _, ok := denote.FrontMatterTemplates[fileType]; !ok {
+				fmt.Fprintf(os.Stderr, "error: unsupported file type: %s\nSupported: org, md-yaml, md-toml, txt\n", fileType)
+				os.Exit(1)
+			}
+		} else if strings.HasPrefix(fullArg, "-e ") {
+			parts := strings.SplitN(fullArg, " ", 2)
+			if len(parts) < 2 {
+				fmt.Fprintf(os.Stderr, "error: missing arguments after -e\nUsage: new [-f type] [-e] 'Title' [tag1 tag2 ...]\n")
+				os.Exit(1)
+			}
+			encrypt = true
+			fullArg = parts[1]
+		} else {
+			break
 		}
 	}
 	
@@ -82,7 +146,7 @@ Note: Title must be quoted with single quotes.
 	titleRe := regexp.MustCompile(`'([^']+)'`)
 	m := titleRe.FindStringSubmatch(fullArg)
 	if m == nil {
-		fmt.Fprintf(os.Stderr, "error: title must be quoted with single quotes\nUsage: new [-f type] 'Title' [tag1 tag2 ...]\n")
+		fmt.Fprintf(os.Stderr, "error: title must be quoted with single quotes\nUsage: new [-f type] [-e] 'Title' [tag1 tag2 ...]\n")
 		os.Exit(1)
 	}
 	title := m[1]
@@ -95,7 +159,16 @@ Note: Title must be quoted with single quotes.
 	}
 	
 	// Create the note
-	path, err := denote.CreateNote(dir, title, keywords, fileType, "")
+	var path string
+	var err error
+	
+	if encrypt {
+		// Create encrypted note using CryptPut
+		path, err = createEncryptedNote(dir, title, keywords, fileType)
+	} else {
+		// Create regular note
+		path, err = denote.CreateNote(dir, title, keywords, fileType, "")
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating note: %v\n", err)
 		os.Exit(1)
