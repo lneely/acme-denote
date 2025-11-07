@@ -54,9 +54,12 @@ Denote tag:journal sort:title       # Journal entries sorted by title
 Denote new 'Meeting Notes' work project
 Denote new -f org 'Todo List' tasks
 Denote new -f txt 'Journal Entry' journal
+Denote new -e 'Secret Notes' encrypted
 ```
 
-Supported file types: `org`, `md-yaml`, `md-toml`, `txt`
+**Options:**
+- `-f type` - File type (default: md-yaml). Supported: `org`, `md-yaml`, `md-toml`, `txt`
+- `-e` - Encrypt the file using GPG (requires acme-crypt and `ACME_CRYPT_RCPT` environment variable)
 
 **Renaming notes:**
 ```
@@ -168,9 +171,10 @@ For encrypted `.gpg` files, install [acme-crypt](https://github.com/lneely/acme-
 ```bash
 git clone https://github.com/lneely/acme-crypt
 cd acme-crypt && mk install
+export ACME_CRYPT_RCPT="your@email.com"  # Your GPG key for encryption
 ```
 
-acme-denote will automatically detect `.gpg` files and use `CryptGet` to open them with decryption support in acme.
+acme-denote will automatically detect `.gpg` files and use `CryptGet` to open them with decryption support in acme. To create encrypted notes, use the `-e` flag with `Denote new`.
 
 ## Front Matter
 
