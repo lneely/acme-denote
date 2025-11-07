@@ -104,10 +104,29 @@ Journal add 20251025 # Create entry for specific date (YYYYMMDD)
 - `+/-Nm` - minutes (e.g., `+15m`, `-30m`)
 - `+/-Ns` - seconds (e.g., `+30s`, `-45s`)
 
+**Journal encryption:**
+```
+Journal -e              # Create encrypted journal entry (requires -e flag or config)
+Journal -f org -e       # Create encrypted org journal entry
+```
+
+**Options:**
+- `-f type` - File type (default: md-yaml). Supported: `org`, `md-yaml`, `md-toml`, `txt`
+- `-e` - Encrypt the journal entry using GPG (requires acme-crypt and `ACME_CRYPT_RCPT` environment variable)
+
+**Configuration file:** `~/.config/acme-denote/journal.cfg`
+```
+always_encrypt = true
+```
+- Set `always_encrypt = true` to encrypt all journal entries by default
+- The `-e` flag can still be used to encrypt individual entries when `always_encrypt = false`
+- If configuration file doesn't exist, defaults to no encryption
+
 Journal entries are automatically:
 - Titled with format: "Monday 3 November 2025 16:56"
 - Tagged with `journal`
 - Stored in `$JOURNAL_DIR` subdirectory (default: `journal/`)
+- Encrypted with `.gpg` extension when using `-e` flag or `always_encrypt = true`
 
 ## Acme Integration
 

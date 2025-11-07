@@ -1,15 +1,61 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"denote/internal/denote"
 )
+
+func configDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "acme-denote")
+}
+
+func readJournalConfig() (bool, error) {
+	configPath := filepath.Join(configDir(), "journal.cfg")
+	
+	file, err := os.Open(configPath)
+	if os.IsNotExist(err) {
+		// File doesn't exist, default to false
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		
+		if key == "always_encrypt" {
+			return value == "true", nil
+		}
+	}
+	
+	return false, scanner.Err()
+}
 
 func journalDir() string {
 	base := denote.DefaultDir()
@@ -69,6 +115,60 @@ func parseRelativeDate(relStr string, now time.Time) (time.Time, error) {
 	return result, nil
 }
 
+func checkCryptPutAvailable() error {
+	_, err := exec.LookPath("CryptPut")
+	if err != nil {
+		return fmt.Errorf("CryptPut is not installed.\ngit clone https://github.com/lneely/acme-crypt")
+	}
+	return nil
+}
+
+func createEncryptedJournalEntry(dir, title string, keywords []string, fileType, identifier string) (string, error) {
+	// Check if CryptPut is available
+	if err := checkCryptPutAvailable(); err != nil {
+		return "", err
+	}
+	
+	// Check for ACME_CRYPT_RCPT environment variable
+	recipient := os.Getenv("ACME_CRYPT_RCPT")
+	if recipient == "" {
+		return "", fmt.Errorf("ACME_CRYPT_RCPT environment variable is not set")
+	}
+	
+	// Use provided identifier or generate new one
+	if identifier == "" {
+		identifier = time.Now().Format("20060102T150405")
+	}
+	
+	// Format file name with .gpg extension
+	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	
+	var keywordsPart string
+	if len(keywords) > 0 {
+		keywordsPart = "__" + strings.Join(keywords, "_")
+	}
+	
+	ext := denote.FileExtensions[fileType]
+	filename := fmt.Sprintf("%s--%s%s%s.gpg", identifier, titleSlug, keywordsPart, ext)
+	path := filepath.Join(dir, filename)
+	
+	// Generate front matter content
+	template := denote.FrontMatterTemplates[fileType]
+	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
+	keywordsStr := denote.FormatKeywords(keywords, fileType)
+	
+	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, "")
+	
+	// Create encrypted file using CryptPut
+	cmd := exec.Command("CryptPut", path)
+	cmd.Stdin = strings.NewReader(content)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to create encrypted file: %v", err)
+	}
+	
+	return path, nil
+}
+
 func main() {
 	// Check for relative date arguments before flag parsing (to avoid -1d being treated as flag)
 	var relativeArg string
@@ -84,6 +184,7 @@ func main() {
 	}
 	
 	fileType := flag.String("f", "md-yaml", "file type (org, md-yaml, md-toml, txt)")
+	encrypt := flag.Bool("e", false, "encrypt the file")
 	flag.Parse()
 
 	args := flag.Args()
@@ -92,6 +193,17 @@ func main() {
 	if relativeArg != "" {
 		args = append([]string{relativeArg}, args...)
 	}
+	
+	// Read configuration
+	alwaysEncrypt, err := readJournalConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading journal config: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Determine if we should encrypt (either flag or config)
+	shouldEncrypt := *encrypt || alwaysEncrypt
+	
 	dir := journalDir()
 
 	// Ensure journal directory exists
@@ -129,7 +241,15 @@ func main() {
 		}
 
 		title := formatJournalTitle(targetDate)
-		path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, identifier)
+		var path string
+		var err error
+		
+		if shouldEncrypt {
+			path, err = createEncryptedJournalEntry(dir, title, []string{"journal"}, *fileType, identifier)
+		} else {
+			path, err = denote.CreateNote(dir, title, []string{"journal"}, *fileType, identifier)
+		}
+		
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating journal entry: %v\n", err)
 			os.Exit(1)
@@ -189,7 +309,14 @@ func main() {
 	title := formatJournalTitle(targetDate)
 	// Identifier is always the actual creation time
 	identifier := now.Format("20060102T150405")
-	path, err := denote.CreateNote(dir, title, []string{"journal"}, *fileType, identifier)
+	
+	var path string
+	if shouldEncrypt {
+		path, err = createEncryptedJournalEntry(dir, title, []string{"journal"}, *fileType, identifier)
+	} else {
+		path, err = denote.CreateNote(dir, title, []string{"journal"}, *fileType, identifier)
+	}
+	
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error creating journal entry: %v\n", err)
 		os.Exit(1)
