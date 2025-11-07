@@ -71,6 +71,13 @@ The rename command:
 - Preserves identifier from filename or front matter
 - Extracts title from front matter or first heading if no arguments provided
 
+**Opening notes by identifier:**
+```
+Denote open 20251103T183000
+```
+
+Opens a note by its identifier. This is particularly useful with plumbing integration - see [PLUMBING.md](PLUMBING.md) for how to make `denote:<identifier>` links clickable in acme.
+
 ### Journal
 
 Daily journaling with automatic date-based titles.
@@ -101,12 +108,13 @@ Journal entries are automatically:
 
 ## Acme Integration
 
-Both commands output to a `+Denote` window with clickable file paths. Results show:
+Both commands output to a `+Denote` window with clickable results. Output format:
 ```
-20251103T183000--meeting-notes__work_project.md : Meeting Notes (work, project) [/home/user/doc/20251103T183000--meeting-notes__work_project.md]
+denote:20251103T183000 | Meeting Notes | work, project
+denote:20251103T090000 | Monday 3 November 2025 09:00 | journal
+```
 
-20251103T090000--monday-3-november-2025-09-00__journal.md : Daily Standup (journal) [/home/user/doc/journal/20251103T090000--monday-3-november-2025-09-00__journal.md]
-```
+The `denote:<identifier>` prefix makes results clickable when plumbing is configured - see [PLUMBING.md](PLUMBING.md) for setup instructions.
 
 **Workflows:**
 
