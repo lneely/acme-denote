@@ -1,6 +1,5 @@
 install:V:
-	go build -o $HOME/bin/Denote ./cmd/Denote
-	go build -o $HOME/bin/Journal ./cmd/Journal
+	go build -o $HOME/bin/Denote .
 
 clean:V:
-	rm -f $HOME/bin/Denote $HOME/bin/Journal
+	rm -f $HOME/bin/Denote
