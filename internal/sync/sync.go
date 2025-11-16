@@ -1,3 +1,9 @@
+/*
+The sync package synchronizes the underlying filesystem with the 9P virtual filesystem by loading
+the denote metadata from the underlying filesystem, and refreshing the in-memory metadata. Files
+with denote front matter use the front matter, and all other files use the metadata encoded in
+the file name.
+*/
 package sync
 
 import (

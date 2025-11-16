@@ -1,3 +1,22 @@
+/*
+The fs package provides a 9P filesystem that exposes the in-memory data set containing
+denote metadata for all files in the denote directory. The filesystem is organized as
+follows:
+
+	denote/                 (directory)  Root filesystem
+		<identifier>/       (directory)  Unique denote file identifier
+			event			(write-only) File event bus (publish rename and update events)
+			extension		(read-only)  Underlying file extension (e.g., org, md, txt)
+			keywords		(read-write) File tags
+			path			(read-only)  Path on underlying filesystem
+			title			(read-write) Denote document title
+		event				(read-only)  Global event bus (listen & react to rename and update events)
+		index				(read-only)  Metadata index, supports search functionality
+
+Notes:
+- Events written to the file event bus are broadcast over the global event bus.
+- Writing to title or keywords triggers an update ('u') event and a rename ('r') event
+*/
 package fs
 
 import (
@@ -201,14 +220,14 @@ const (
 var fileNames = []string{"path", "title", "keywords", "extension", "event"}
 
 type server struct {
-	dir          string
-	notes        Results
-	mu           sync.RWMutex
-	eventChan    chan string
-	eventSubs    map[uint64]chan string
-	eventMu      sync.RWMutex
-	nextSubID    uint64
-	nextSubIDMu  sync.Mutex
+	dir         string
+	notes       Results
+	mu          sync.RWMutex
+	eventChan   chan string
+	eventSubs   map[uint64]chan string
+	eventMu     sync.RWMutex
+	nextSubID   uint64
+	nextSubIDMu sync.Mutex
 }
 
 type connState struct {
@@ -773,8 +792,8 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	switch fieldName {
 	case "title":
 		note.Title = value
-		// Emit event for metadata update
-		event := noteID + " u"
+		// Metadata up to date, trigger file rename
+		event := noteID + " r"
 		select {
 		case s.eventChan <- event:
 		default:
@@ -790,8 +809,8 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			}
 			note.Tags = tags
 		}
-		// Emit event for metadata update
-		event := noteID + " u"
+		// Metadata up to date, trigger file rename
+		event := noteID + " r"
 		select {
 		case s.eventChan <- event:
 		default:
