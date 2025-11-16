@@ -198,7 +198,7 @@ const (
 	fileTypeExtension
 )
 
-var fileNames = []string{"path", "title", "keywords", "extension"}
+var fileNames = []string{"path", "title", "keywords", "extension", "event"}
 
 type server struct {
 	dir          string
@@ -348,6 +348,37 @@ func With9P(fn func(*client.Fsys) error) error {
 	defer root.Close()
 
 	return fn(root)
+}
+
+// WriteFile writes data to a 9P file
+func WriteFile(f *client.Fsys, path string, data string) error {
+	fid, err := f.Open(path, plan9.OWRITE)
+	if err != nil {
+		return err
+	}
+	defer fid.Close()
+
+	_, err = fid.Write([]byte(data))
+	return err
+}
+
+// UpdatePath updates the path for a note in the in-memory collection
+func UpdatePath(identifier string, newPath string) error {
+	if srv == nil {
+		return fmt.Errorf("server not running")
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	for _, note := range srv.notes {
+		if note.Identifier == identifier {
+			note.Path = newPath
+			return nil
+		}
+	}
+
+	return fmt.Errorf("note not found: %s", identifier)
 }
 
 // StartServer starts the 9P fileserver in the background
@@ -742,6 +773,13 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	switch fieldName {
 	case "title":
 		note.Title = value
+		// Emit event for metadata update
+		event := noteID + " u"
+		select {
+		case s.eventChan <- event:
+		default:
+			// Channel full, drop event
+		}
 	case "keywords":
 		if value == "" {
 			note.Tags = []string{}
@@ -752,16 +790,23 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			}
 			note.Tags = tags
 		}
+		// Emit event for metadata update
+		event := noteID + " u"
+		select {
+		case s.eventChan <- event:
+		default:
+			// Channel full, drop event
+		}
+	case "event":
+		// Emit custom event (e.g., "r" for rename)
+		event := noteID + " " + value
+		select {
+		case s.eventChan <- event:
+		default:
+			// Channel full, drop event
+		}
 	default:
 		return errorFcall(fc, "field is read-only")
-	}
-
-	// Emit event for metadata update
-	event := noteID + " u"
-	select {
-	case s.eventChan <- event:
-	default:
-		// Channel full, drop event
 	}
 
 	return &plan9.Fcall{
@@ -870,6 +915,8 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			mode := uint32(0444) // read-only by default
 			if fname == "title" || fname == "keywords" {
 				mode = 0644 // writable
+			} else if fname == "event" {
+				mode = 0200 // write-only
 			}
 			dirs = append(dirs, plan9.Dir{
 				Qid: plan9.Qid{

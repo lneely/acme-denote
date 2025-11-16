@@ -4,6 +4,7 @@ import (
 	"denote/internal/fs"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,8 +16,13 @@ import (
 	"9fans.net/go/plan9/client"
 )
 
-// ReadFile reads entire content from a 9P file
-func ReadFile(f *client.Fsys, path string) (string, error) {
+// GetDir returns the denote directory path
+func GetDir() string {
+	return fmt.Sprintf("%s/doc", os.Getenv("HOME"))
+}
+
+// readFile reads entire content from a 9P file
+func readFile(f *client.Fsys, path string) (string, error) {
 	fid, err := f.Open(path, plan9.OREAD)
 	if err != nil {
 		return "", err
@@ -44,7 +50,7 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 
 	err := fs.With9P(func(f *client.Fsys) error {
 		// Read index to get identifiers
-		indexContent, err := ReadFile(f, "index")
+		indexContent, err := readFile(f, "index")
 		if err != nil {
 			return fmt.Errorf("failed to read index: %w", err)
 		}
@@ -66,13 +72,13 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 			}
 
 			// Read remaining fields from note directory
-			if path, err := ReadFile(f, identifier+"/path"); err == nil {
+			if path, err := readFile(f, identifier+"/path"); err == nil {
 				meta.Path = path
 			}
-			if ext, err := ReadFile(f, identifier+"/extension"); err == nil {
+			if ext, err := readFile(f, identifier+"/extension"); err == nil {
 				meta.Extension = ext
 			}
-			if keywords, err := ReadFile(f, identifier+"/keywords"); err == nil && keywords != "" {
+			if keywords, err := readFile(f, identifier+"/keywords"); err == nil && keywords != "" {
 				meta.Tags = strings.Split(keywords, ",")
 				for i := range meta.Tags {
 					meta.Tags[i] = strings.TrimSpace(meta.Tags[i])
@@ -81,7 +87,7 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 
 			// Read title - 9P server already returns file content title if available,
 			// otherwise filename-based title
-			if title, err := ReadFile(f, identifier+"/title"); err == nil {
+			if title, err := readFile(f, identifier+"/title"); err == nil {
 				meta.Title = title
 			}
 
@@ -141,9 +147,10 @@ identifier: %s
 `,
 }
 
-// FileExtensions contains the list of file extension
+//	contains the list of file extension
+//
 // for which Denote should add front matter.
-var FileExtensions = map[string]string{
+var fileExtensions = map[string]string{
 	"org":     ".org",
 	"md-yaml": ".md",
 	"md-toml": ".md",
@@ -162,40 +169,6 @@ func formatTags(tags []string, fileType string) string {
 	default:
 		return strings.Join(tags, " ")
 	}
-}
-
-func NewNote(dir, title string, keywords []string, fileType, identifier string) (string, error) {
-	// Use provided identifier or generate new one
-	if identifier == "" {
-		identifier = time.Now().Format("20060102T150405")
-	}
-
-	// Format file name
-	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
-	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
-
-	var keywordsPart string
-	if len(keywords) > 0 {
-		keywordsPart = "__" + strings.Join(keywords, "_")
-	}
-
-	ext := FileExtensions[fileType]
-	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
-	path := filepath.Join(dir, filename)
-
-	// Generate front matter
-	template := templates[fileType]
-	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
-	keywordsStr := formatTags(keywords, fileType)
-
-	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier)
-
-	// Write file
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return "", err
-	}
-
-	return path, nil
 }
 
 // FrontMatter represents parsed front matter from a note
@@ -287,8 +260,8 @@ func ExtractFrontMatter(path string) (*FrontMatter, error) {
 	return fm, nil
 }
 
-// UpdateFrontMatter updates front matter in a file
-func UpdateFrontMatter(path string, fm *FrontMatter) error {
+// updateFrontMatter updates front matter in a file
+func updateFrontMatter(path string, fm *FrontMatter) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -357,8 +330,8 @@ func UpdateFrontMatter(path string, fm *FrontMatter) error {
 	return os.WriteFile(path, []byte(newText), 0644)
 }
 
-// Rename renames a note file according to denote convention
-func Rename(oldPath, title string, keywords []string, identifier string) (string, error) {
+// rename renames a note file according to denote convention
+func rename(oldPath, title string, keywords []string, identifier string) (string, error) {
 	if identifier == "" {
 		identifier = time.Now().Format("20060102T150405")
 	}
@@ -383,6 +356,40 @@ func Rename(oldPath, title string, keywords []string, identifier string) (string
 	return newPath, nil
 }
 
+func NewNote(dir, title string, keywords []string, fileType, identifier string) (string, error) {
+	// Use provided identifier or generate new one
+	if identifier == "" {
+		identifier = time.Now().Format("20060102T150405")
+	}
+
+	// Format file name
+	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
+
+	var keywordsPart string
+	if len(keywords) > 0 {
+		keywordsPart = "__" + strings.Join(keywords, "_")
+	}
+
+	ext := fileExtensions[fileType]
+	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+	path := filepath.Join(dir, filename)
+
+	// Generate front matter
+	template := templates[fileType]
+	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
+	keywordsStr := formatTags(keywords, fileType)
+
+	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier)
+
+	// Write file
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
 // NewNoteEncrypted creates a new encrypted denote note using CryptPut
 func NewNoteEncrypted(dir, title string, keywords []string, fileType, identifier string) (string, error) {
 	if _, err := exec.LookPath("CryptPut"); err != nil {
@@ -404,7 +411,7 @@ func NewNoteEncrypted(dir, title string, keywords []string, fileType, identifier
 		keywordsPart = "__" + strings.Join(keywords, "_")
 	}
 
-	ext := FileExtensions[fileType]
+	ext := fileExtensions[fileType]
 	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
 	plainPath := filepath.Join(dir, filename)
 
@@ -457,4 +464,158 @@ func IdentifierToPath(identifier string) (string, error) {
 	fmt.Println("IdentifierToPath: ", notes[0].Path)
 
 	return notes[0].Path, nil
+}
+
+func EventListener() {
+	for {
+		err := fs.With9P(func(f *client.Fsys) error {
+			// Open event file (blocking reads)
+			fid, err := f.Open("event", plan9.OREAD)
+			if err != nil {
+				return fmt.Errorf("failed to open event file: %w", err)
+			}
+			defer fid.Close()
+
+			// Read events in loop
+			buf := make([]byte, 8192)
+			for {
+				n, err := fid.Read(buf)
+				if err != nil {
+					return fmt.Errorf("failed to read event: %w", err)
+				}
+				if n == 0 {
+					continue
+				}
+
+				event := strings.TrimSpace(string(buf[:n]))
+
+				// Parse event: "identifier action"
+				parts := strings.Fields(event)
+				if len(parts) != 2 {
+					log.Printf("invalid event format: %s", event)
+					continue
+				}
+
+				identifier := parts[0]
+				action := parts[1]
+
+				// Handle events
+				switch action {
+				case "u":
+					if err := handleUpdateEvent(f, identifier); err != nil {
+						log.Printf("error handling update for %s: %v", identifier, err)
+					}
+				case "r":
+					if err := handleRenameEvent(f, identifier); err != nil {
+						log.Printf("error handling rename for %s: %v", identifier, err)
+					}
+				}
+			}
+		})
+
+		if err != nil {
+			log.Printf("event consumer error: %v", err)
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+func handleUpdateEvent(f *client.Fsys, identifier string) error {
+	// Read current metadata via 9P
+	title, err := readFile(f, identifier+"/title")
+	if err != nil {
+		return fmt.Errorf("failed to read title: %w", err)
+	}
+
+	keywords, err := readFile(f, identifier+"/keywords")
+	if err != nil {
+		return fmt.Errorf("failed to read keywords: %w", err)
+	}
+
+	path, err := readFile(f, identifier+"/path")
+	if err != nil {
+		return fmt.Errorf("failed to read path: %w", err)
+	}
+
+	ext, err := readFile(f, identifier+"/extension")
+	if err != nil {
+		return fmt.Errorf("failed to read extension: %w", err)
+	}
+
+	// Parse tags from keywords
+	var tags []string
+	if keywords != "" {
+		for _, tag := range strings.Split(keywords, ",") {
+			tags = append(tags, strings.TrimSpace(tag))
+		}
+	}
+
+	// Determine file type from extension
+	var fileType string
+	switch ext {
+	case ".org":
+		fileType = "org"
+	case ".md":
+		// Need to detect YAML vs TOML - default to YAML
+		fileType = "md-yaml"
+	case ".txt":
+		fileType = "txt"
+	default:
+		fileType = "txt"
+	}
+
+	// Update front matter
+	fm := &FrontMatter{
+		Title:      title,
+		Tags:       tags,
+		Identifier: identifier,
+		FileType:   fileType,
+	}
+
+	if err := updateFrontMatter(path, fm); err != nil {
+		log.Printf("failed to update front matter for %s: %v", identifier, err)
+	}
+
+	return nil
+}
+
+func handleRenameEvent(f *client.Fsys, identifier string) error {
+	// Read current metadata via 9P
+	title, err := readFile(f, identifier+"/title")
+	if err != nil {
+		return fmt.Errorf("failed to read title: %w", err)
+	}
+
+	keywords, err := readFile(f, identifier+"/keywords")
+	if err != nil {
+		return fmt.Errorf("failed to read keywords: %w", err)
+	}
+
+	path, err := readFile(f, identifier+"/path")
+	if err != nil {
+		return fmt.Errorf("failed to read path: %w", err)
+	}
+
+	// Parse tags from keywords
+	var tags []string
+	if keywords != "" {
+		for _, tag := range strings.Split(keywords, ",") {
+			tags = append(tags, strings.TrimSpace(tag))
+		}
+	}
+
+	// Rename file
+	newPath, err := rename(path, title, tags, identifier)
+	if err != nil {
+		return fmt.Errorf("failed to rename file: %w", err)
+	}
+
+	// Update path in in-memory metadata if it changed
+	if newPath != path {
+		if err := fs.UpdatePath(identifier, newPath); err != nil {
+			return fmt.Errorf("failed to update path: %w", err)
+		}
+	}
+
+	return nil
 }
