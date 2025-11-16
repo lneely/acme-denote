@@ -99,7 +99,7 @@ func main() {
 }
 
 func performSearch(w *ui.Window, searchText string) {
-	args := parseChordedArgs(searchText)
+	args := parseArgs(searchText)
 
 	var filterArgs []string
 	sortBy := fs.SortById
@@ -161,8 +161,8 @@ func refreshWindow(w *ui.Window, rs fs.Results) {
 	ui.BodyWrite(w, ",", []byte(content))
 }
 
-// parseChordedArgs parses space-separated arguments, handling quoted strings
-func parseChordedArgs(s string) []string {
+// parseArgs parses space-separated arguments, handling quoted strings
+func parseArgs(s string) []string {
 	var args []string
 	var current strings.Builder
 	inQuote := false
