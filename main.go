@@ -56,7 +56,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if err = ui.TagSet(w, "Reset"); err != nil {
+	if err = ui.TagSet(w, "Reset Sync"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -83,6 +83,10 @@ func main() {
 			case "Look":
 				// Use e.Arg for the search arguments
 				performSearch(w, string(e.Arg))
+			case "Sync":
+				if err := sync.SyncAll(); err != nil {
+					log.Printf("sync error: %v", err)
+				}
 			default:
 				w.WriteEvent(e)
 			}

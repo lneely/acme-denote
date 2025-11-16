@@ -226,8 +226,8 @@ type fid struct {
 
 var srv *server
 
-// extractMetadata extracts Denote metadata from a filename
-func extractMetadata(path string) *Metadata {
+// ExtractMetadata extracts Denote metadata from a filename
+func ExtractMetadata(path string) *Metadata {
 	fname := filepath.Base(path)
 	note := &Metadata{Path: path}
 
@@ -308,7 +308,7 @@ func loadData(filters []*Filter) (Results, error) {
 		if info.IsDir() {
 			return nil
 		}
-		if note := extractMetadata(path); note.Identifier != "" {
+		if note := ExtractMetadata(path); note.Identifier != "" {
 			match := true
 			for _, filt := range filters {
 				if !filt.IsMatch(note) {

@@ -550,31 +550,35 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 		}
 	}
 
-	// Determine file type from extension
-	var fileType string
-	switch ext {
-	case ".org":
-		fileType = "org"
-	case ".md":
-		// Need to detect YAML vs TOML - default to YAML
-		fileType = "md-yaml"
-	case ".txt":
-		fileType = "txt"
-	default:
-		fileType = "txt"
-	}
+	// Check if this is a denote file (has front matter)
+	isDenoteFile := ext == ".org" || ext == ".md" || ext == ".txt"
 
-	// Update front matter
-	fm := &FrontMatter{
-		Title:      title,
-		Tags:       tags,
-		Identifier: identifier,
-		FileType:   fileType,
-	}
+	if isDenoteFile {
+		// Determine file type from extension
+		var fileType string
+		switch ext {
+		case ".org":
+			fileType = "org"
+		case ".md":
+			// Need to detect YAML vs TOML - default to YAML
+			fileType = "md-yaml"
+		case ".txt":
+			fileType = "txt"
+		}
 
-	if err := updateFrontMatter(path, fm); err != nil {
-		log.Printf("failed to update front matter for %s: %v", identifier, err)
+		// Update front matter
+		fm := &FrontMatter{
+			Title:      title,
+			Tags:       tags,
+			Identifier: identifier,
+			FileType:   fileType,
+		}
+
+		if err := updateFrontMatter(path, fm); err != nil {
+			log.Printf("failed to update front matter for %s: %v", identifier, err)
+		}
 	}
+	// For non-denote files (PDFs, etc.), metadata is already updated by 9P write
 
 	return nil
 }
