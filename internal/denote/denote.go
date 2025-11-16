@@ -15,8 +15,8 @@ import (
 	"9fans.net/go/plan9/client"
 )
 
-// readFile reads entire content from a 9P file
-func readFile(f *client.Fsys, path string) (string, error) {
+// ReadFile reads entire content from a 9P file
+func ReadFile(f *client.Fsys, path string) (string, error) {
 	fid, err := f.Open(path, plan9.OREAD)
 	if err != nil {
 		return "", err
@@ -44,7 +44,7 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 
 	err := fs.With9P(func(f *client.Fsys) error {
 		// Read index to get identifiers
-		indexContent, err := readFile(f, "index")
+		indexContent, err := ReadFile(f, "index")
 		if err != nil {
 			return fmt.Errorf("failed to read index: %w", err)
 		}
@@ -66,13 +66,13 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 			}
 
 			// Read remaining fields from note directory
-			if path, err := readFile(f, identifier+"/path"); err == nil {
+			if path, err := ReadFile(f, identifier+"/path"); err == nil {
 				meta.Path = path
 			}
-			if ext, err := readFile(f, identifier+"/extension"); err == nil {
+			if ext, err := ReadFile(f, identifier+"/extension"); err == nil {
 				meta.Extension = ext
 			}
-			if keywords, err := readFile(f, identifier+"/keywords"); err == nil && keywords != "" {
+			if keywords, err := ReadFile(f, identifier+"/keywords"); err == nil && keywords != "" {
 				meta.Tags = strings.Split(keywords, ",")
 				for i := range meta.Tags {
 					meta.Tags[i] = strings.TrimSpace(meta.Tags[i])
@@ -81,7 +81,7 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 
 			// Read title - 9P server already returns file content title if available,
 			// otherwise filename-based title
-			if title, err := readFile(f, identifier+"/title"); err == nil {
+			if title, err := ReadFile(f, identifier+"/title"); err == nil {
 				meta.Title = title
 			}
 
