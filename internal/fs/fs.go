@@ -187,6 +187,7 @@ const (
 	qidNoteBase = 1
 	qidFileBase = 1000001
 	qidIndex    = 999999
+	qidEvent    = 999998
 )
 
 // File types within a note directory
@@ -200,16 +201,27 @@ const (
 var fileNames = []string{"path", "title", "keywords", "extension"}
 
 type server struct {
-	dir   string
-	notes Results
-	mu    sync.RWMutex
-	fids  map[uint32]*fid
+	dir          string
+	notes        Results
+	mu           sync.RWMutex
+	eventChan    chan string
+	eventSubs    map[uint64]chan string
+	eventMu      sync.RWMutex
+	nextSubID    uint64
+	nextSubIDMu  sync.Mutex
+}
+
+type connState struct {
+	fids map[uint32]*fid
+	mu   sync.RWMutex
 }
 
 type fid struct {
 	qid    plan9.Qid
 	path   string
 	offset int64
+	mode   uint8
+	subID  uint64 // unique event subscriber ID, 0 if not subscribed
 }
 
 var srv *server
@@ -351,10 +363,14 @@ func StartServer() error {
 	}
 
 	srv = &server{
-		dir:   getdir(),
-		notes: notes,
-		fids:  make(map[uint32]*fid),
+		dir:       getdir(),
+		notes:     notes,
+		eventChan: make(chan string, 100),
+		eventSubs: make(map[uint64]chan string),
 	}
+
+	// Start broadcaster goroutine
+	go srv.broadcastEvents()
 
 	// Get namespace and create Unix socket path
 	ns := client.Namespace()
@@ -379,6 +395,20 @@ func StartServer() error {
 	return nil
 }
 
+func (s *server) broadcastEvents() {
+	for event := range s.eventChan {
+		s.eventMu.RLock()
+		for _, sub := range s.eventSubs {
+			select {
+			case sub <- event:
+			default:
+				// Subscriber slow, drop event
+			}
+		}
+		s.eventMu.RUnlock()
+	}
+}
+
 func (s *server) acceptLoop(listener net.Listener) {
 	defer listener.Close()
 
@@ -396,6 +426,10 @@ func (s *server) acceptLoop(listener net.Listener) {
 func (s *server) serve(conn net.Conn) {
 	defer conn.Close()
 
+	cs := &connState{
+		fids: make(map[uint32]*fid),
+	}
+
 	for {
 		fc, err := plan9.ReadFcall(conn)
 		if err != nil {
@@ -405,7 +439,7 @@ func (s *server) serve(conn net.Conn) {
 			return
 		}
 
-		rfc := s.handle(fc)
+		rfc := s.handle(cs, fc)
 		if err := plan9.WriteFcall(conn, rfc); err != nil {
 			fmt.Fprintf(os.Stderr, "denote fs: write error: %v\n", err)
 			return
@@ -413,24 +447,26 @@ func (s *server) serve(conn net.Conn) {
 	}
 }
 
-func (s *server) handle(fc *plan9.Fcall) *plan9.Fcall {
+func (s *server) handle(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	switch fc.Type {
 	case plan9.Tversion:
 		return s.version(fc)
 	case plan9.Tauth:
 		return errorFcall(fc, "denote: authentication not required")
 	case plan9.Tattach:
-		return s.attach(fc)
+		return s.attach(cs, fc)
 	case plan9.Twalk:
-		return s.walk(fc)
+		return s.walk(cs, fc)
 	case plan9.Topen:
-		return s.open(fc)
+		return s.open(cs, fc)
 	case plan9.Tread:
-		return s.read(fc)
+		return s.read(cs, fc)
+	case plan9.Twrite:
+		return s.write(cs, fc)
 	case plan9.Tstat:
-		return s.stat(fc)
+		return s.stat(cs, fc)
 	case plan9.Tclunk:
-		return s.clunk(fc)
+		return s.clunk(cs, fc)
 	default:
 		return errorFcall(fc, "operation not supported")
 	}
@@ -446,16 +482,16 @@ func (s *server) version(fc *plan9.Fcall) *plan9.Fcall {
 	}
 }
 
-func (s *server) attach(fc *plan9.Fcall) *plan9.Fcall {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *server) attach(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
 	qid := plan9.Qid{
 		Type: QTDir,
 		Path: qidRoot,
 	}
 
-	s.fids[fc.Fid] = &fid{
+	cs.fids[fc.Fid] = &fid{
 		qid:  qid,
 		path: "/",
 	}
@@ -467,11 +503,11 @@ func (s *server) attach(fc *plan9.Fcall) *plan9.Fcall {
 	}
 }
 
-func (s *server) walk(fc *plan9.Fcall) *plan9.Fcall {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	f, ok := s.fids[fc.Fid]
+	f, ok := cs.fids[fc.Fid]
 	if !ok {
 		return errorFcall(fc, "fid not found")
 	}
@@ -482,7 +518,7 @@ func (s *server) walk(fc *plan9.Fcall) *plan9.Fcall {
 			qid:  f.qid,
 			path: f.path,
 		}
-		s.fids[fc.Newfid] = newFid
+		cs.fids[fc.Newfid] = newFid
 		return &plan9.Fcall{
 			Type: plan9.Rwalk,
 			Tag:  fc.Tag,
@@ -505,6 +541,14 @@ func (s *server) walk(fc *plan9.Fcall) *plan9.Fcall {
 				}
 				qids = append(qids, qid)
 				path = "/index"
+				found = true
+			} else if "event" == name {
+				qid := plan9.Qid{
+					Type: QTFile,
+					Path: uint64(qidEvent),
+				}
+				qids = append(qids, qid)
+				path = "/event"
 				found = true
 			} else {
 				for i, note := range s.notes {
@@ -549,7 +593,7 @@ func (s *server) walk(fc *plan9.Fcall) *plan9.Fcall {
 		qid:  qids[len(qids)-1],
 		path: path,
 	}
-	s.fids[fc.Newfid] = newFid
+	cs.fids[fc.Newfid] = newFid
 
 	return &plan9.Fcall{
 		Type: plan9.Rwalk,
@@ -558,13 +602,29 @@ func (s *server) walk(fc *plan9.Fcall) *plan9.Fcall {
 	}
 }
 
-func (s *server) open(fc *plan9.Fcall) *plan9.Fcall {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *server) open(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	f, ok := s.fids[fc.Fid]
+	f, ok := cs.fids[fc.Fid]
 	if !ok {
 		return errorFcall(fc, "fid not found")
+	}
+
+	f.mode = fc.Mode
+
+	// Register event subscriber if opening event file
+	if f.qid.Path == uint64(qidEvent) {
+		s.nextSubIDMu.Lock()
+		s.nextSubID++
+		subID := s.nextSubID
+		s.nextSubIDMu.Unlock()
+
+		f.subID = subID
+
+		s.eventMu.Lock()
+		s.eventSubs[subID] = make(chan string, 10)
+		s.eventMu.Unlock()
 	}
 
 	return &plan9.Fcall{
@@ -574,14 +634,43 @@ func (s *server) open(fc *plan9.Fcall) *plan9.Fcall {
 	}
 }
 
-func (s *server) read(fc *plan9.Fcall) *plan9.Fcall {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *server) read(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.Lock()
 
-	f, ok := s.fids[fc.Fid]
+	f, ok := cs.fids[fc.Fid]
 	if !ok {
+		cs.mu.Unlock()
 		return errorFcall(fc, "fid not found")
 	}
+
+	// Handle event file reads specially
+	if f.qid.Path == uint64(qidEvent) {
+		subID := f.subID
+		s.eventMu.RLock()
+		eventChan, ok := s.eventSubs[subID]
+		s.eventMu.RUnlock()
+		cs.mu.Unlock()
+
+		if !ok {
+			return errorFcall(fc, "event subscriber not found")
+		}
+
+		// Block waiting for next event (without holding server mutex)
+		event, ok := <-eventChan
+		if !ok {
+			return errorFcall(fc, "event channel closed")
+		}
+		data := []byte(event + "\n")
+
+		return &plan9.Fcall{
+			Type:  plan9.Rread,
+			Tag:   fc.Tag,
+			Count: uint32(len(data)),
+			Data:  data,
+		}
+	}
+
+	defer cs.mu.Unlock()
 
 	var data []byte
 
@@ -611,11 +700,82 @@ func (s *server) read(fc *plan9.Fcall) *plan9.Fcall {
 	}
 }
 
-func (s *server) stat(fc *plan9.Fcall) *plan9.Fcall {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	f, ok := s.fids[fc.Fid]
+	f, ok := cs.fids[fc.Fid]
+	if !ok {
+		return errorFcall(fc, "fid not found")
+	}
+
+	// Check if opened for writing
+	if f.mode&plan9.OWRITE == 0 && f.mode&plan9.ORDWR == 0 {
+		return errorFcall(fc, "file not open for writing")
+	}
+
+	// Extract note identifier and field name from path
+	parts := strings.Split(strings.Trim(f.path, "/"), "/")
+	if len(parts) != 2 {
+		return errorFcall(fc, "invalid path")
+	}
+
+	noteID := parts[0]
+	fieldName := parts[1]
+
+	// Find note in s.notes
+	var note *Metadata
+	for _, n := range s.notes {
+		if n.Identifier == noteID {
+			note = n
+			break
+		}
+	}
+
+	if note == nil {
+		return errorFcall(fc, "note not found")
+	}
+
+	// Update the field in memory only
+	value := strings.TrimSpace(string(fc.Data))
+
+	switch fieldName {
+	case "title":
+		note.Title = value
+	case "keywords":
+		if value == "" {
+			note.Tags = []string{}
+		} else {
+			tags := strings.Split(value, ",")
+			for i := range tags {
+				tags[i] = strings.TrimSpace(tags[i])
+			}
+			note.Tags = tags
+		}
+	default:
+		return errorFcall(fc, "field is read-only")
+	}
+
+	// Emit event for metadata update
+	event := noteID + " u"
+	select {
+	case s.eventChan <- event:
+	default:
+		// Channel full, drop event
+	}
+
+	return &plan9.Fcall{
+		Type:  plan9.Rwrite,
+		Tag:   fc.Tag,
+		Count: uint32(len(fc.Data)),
+	}
+}
+
+func (s *server) stat(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	f, ok := cs.fids[fc.Fid]
 	if !ok {
 		return errorFcall(fc, "fid not found")
 	}
@@ -633,11 +793,21 @@ func (s *server) stat(fc *plan9.Fcall) *plan9.Fcall {
 	}
 }
 
-func (s *server) clunk(fc *plan9.Fcall) *plan9.Fcall {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *server) clunk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
-	delete(s.fids, fc.Fid)
+	// Unregister event subscriber if this fid has one
+	if f, ok := cs.fids[fc.Fid]; ok && f.subID != 0 {
+		s.eventMu.Lock()
+		if ch, ok := s.eventSubs[f.subID]; ok {
+			close(ch)
+			delete(s.eventSubs, f.subID)
+		}
+		s.eventMu.Unlock()
+	}
+
+	delete(cs.fids, fc.Fid)
 
 	return &plan9.Fcall{
 		Type: plan9.Rclunk,
@@ -657,6 +827,19 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			},
 			Mode:   0444,
 			Name:   "index",
+			Uid:    "denote",
+			Gid:    "denote",
+			Muid:   "denote",
+			Length: 0,
+		})
+		// add event node
+		dirs = append(dirs, plan9.Dir{
+			Qid: plan9.Qid{
+				Type: QTFile,
+				Path: uint64(qidEvent),
+			},
+			Mode:   0444,
+			Name:   "event",
 			Uid:    "denote",
 			Gid:    "denote",
 			Muid:   "denote",
@@ -684,12 +867,16 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 		noteIdx := s.pathToNoteIndex(path)
 		for i, fname := range fileNames {
 			content := s.getFileContent(path + "/" + fname)
+			mode := uint32(0444) // read-only by default
+			if fname == "title" || fname == "keywords" {
+				mode = 0644 // writable
+			}
 			dirs = append(dirs, plan9.Dir{
 				Qid: plan9.Qid{
 					Type: QTFile,
 					Path: uint64(qidFileBase + noteIdx*100 + i),
 				},
-				Mode:   0444,
+				Mode:   plan9.Perm(mode),
 				Name:   fname,
 				Uid:    "denote",
 				Gid:    "denote",
