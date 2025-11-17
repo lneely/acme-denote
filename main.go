@@ -145,13 +145,13 @@ func main() {
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
 				if input == "" {
-					log.Printf("New: no input provided")
+					log.Printf("Remove: no input provided")
 					break
 				}
 
-				// Write to denote/<identifier>/event via 9P
+				// Write to denote/<identifier>/ctl via 9P
 				if err := fs.With9P(func(f *client.Fsys) error {
-					return fs.WriteFile(f, filepath.Join(input, "event"), "d")
+					return fs.WriteFile(f, filepath.Join(input, "ctl"), "d")
 				}); err != nil {
 					log.Printf("failed to delete file: %v", err)
 				}

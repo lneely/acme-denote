@@ -5,17 +5,19 @@ follows:
 
 	denote/                 (directory)  Root filesystem
 		<identifier>/       (directory)  Unique denote file identifier
-			event			(write-only) File event bus (publish rename and update events)
+			ctl				(write-only) Control file (publish rename, update, and delete events)
 			extension		(read-only)  Underlying file extension (e.g., org, md, txt)
 			keywords		(read-write) File tags
 			path			(read-only)  Path on underlying filesystem
 			title			(read-write) Denote document title
-		event				(read-only)  Global event bus (listen & react to rename and update events)
+		event				(read-only)  Global event bus (listen & react to rename, update, and delete events)
 		index				(read-only)  Metadata index, supports search functionality
 
 Notes:
-- Events written to the file event bus are broadcast over the global event bus.
+- Messages written to the ctl file may generate events that are broadcast over the global event bus.
 - Writing to title or keywords triggers an update ('u') event and a rename ('r') event
+- Write 'd' to denote/<identifier>/ctl to delete a denote file
+- Write "'document title' tag1,tag2,(...)" to denote/new to create a new denote file
 */
 package fs
 
@@ -278,9 +280,10 @@ const (
 	fileTypeTitle
 	fileTypeKeywords
 	fileTypeExtension
+	fileTypeCtl
 )
 
-var fileNames = []string{"path", "title", "keywords", "extension", "event"}
+var fileNames = []string{"path", "title", "keywords", "extension", "ctl"}
 
 type server struct {
 	dir         string
@@ -1005,7 +1008,7 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		case s.eventChan <- noteID + " r":
 		default:
 		}
-	case "event":
+	case "ctl":
 		// Handle delete event specially
 		if value == "d" {
 			// Remove from in-memory state
@@ -1149,7 +1152,7 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			mode := uint32(0444) // read-only by default
 			if fname == "title" || fname == "keywords" {
 				mode = 0644 // writable
-			} else if fname == "event" {
+			} else if fname == "ctl" {
 				mode = 0200 // write-only
 			}
 			dirs = append(dirs, plan9.Dir{
