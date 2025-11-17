@@ -40,7 +40,7 @@ func main() {
 			fmt.Println("Usage:")
 			fmt.Println("Denote is designed to be used in Acme, however it does accept one argument:")
 			fmt.Println()
-			fmt.Println("\tDenote denote:<identifier> - opens denote file by identifier")
+			fmt.Println("\tDenote <identifier> - opens denote file by identifier")
 			fmt.Println()
 		}
 	}
