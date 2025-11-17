@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -182,7 +184,17 @@ func main() {
 				w.WriteEvent(e)
 			}
 		case 'l', 'L':
-			w.WriteEvent(e)
+			// Check if text matches identifier pattern
+			text := string(e.Text)
+			if isIdentifier(text) {
+				// Plumb with denote: prefix
+				cmd := fmt.Sprintf("plumb 'denote:%s'", text)
+				if err := exec.Command("rc", "-c", cmd).Run(); err != nil {
+					log.Printf("failed to plumb identifier: %v", err)
+				}
+			} else {
+				w.WriteEvent(e)
+			}
 		default:
 			w.WriteEvent(e)
 		}
@@ -335,4 +347,10 @@ func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
 	}
 
 	return nil
+}
+
+var identifierPattern = regexp.MustCompile(`^\d{8}T\d{6}$`)
+
+func isIdentifier(s string) bool {
+	return identifierPattern.MatchString(s)
 }
