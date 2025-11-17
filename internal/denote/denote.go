@@ -513,6 +513,10 @@ func EventListener() {
 					if err := handleNewEvent(identifier); err != nil {
 						log.Printf("error handling new for %s: %v", identifier, err)
 					}
+				case "d":
+					if err := handleDeleteEvent(identifier); err != nil {
+						log.Printf("error handling delete for %s: %v", identifier, err)
+					}
 				}
 			}
 		})
@@ -650,5 +654,33 @@ func handleNewEvent(identifier string) error {
 	}
 
 	log.Printf("created new note: %s at %s", identifier, path)
+	return nil
+}
+
+func handleDeleteEvent(identifier string) error {
+	// Get denote directory
+	denoteDir := GetDir()
+
+	// Find file matching pattern: <identifier>--*
+	pattern := filepath.Join(denoteDir, identifier+"--*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to find file: %w", err)
+	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("no file found matching identifier: %s", identifier)
+	}
+
+	if len(matches) > 1 {
+		log.Printf("warning: multiple files match identifier %s, deleting first: %s", identifier, matches[0])
+	}
+
+	// Delete the file
+	if err := os.Remove(matches[0]); err != nil {
+		return fmt.Errorf("failed to delete file: %w", err)
+	}
+
+	log.Printf("deleted note: %s", matches[0])
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -61,7 +62,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if err = ui.TagSet(w, "New Reset Sync Put"); err != nil {
+	if err = ui.TagSet(w, "New Put Remove Reset Sync"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -97,15 +98,17 @@ func main() {
 
 					event := strings.TrimSpace(string(buf[:n]))
 					parts := strings.Fields(event)
-					if len(parts) >= 2 && parts[1] == "n" {
-						// Refresh window with new results
-						rs, err := denote.Search(fs.Filters{})
-						if err != nil {
-							log.Printf("error refreshing after new file: %v", err)
-							continue
+					if len(parts) >= 2 {
+						if parts[1] == "n" || parts[1] == "d" {
+							// Refresh window with new results
+							rs, err := denote.Search(fs.Filters{})
+							if err != nil {
+								log.Printf("error refreshing after new file: %v", err)
+								continue
+							}
+							fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
+							refreshWindow(w, rs)
 						}
-						fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
-						refreshWindow(w, rs)
 					}
 				}
 			})
@@ -137,6 +140,20 @@ func main() {
 					return fs.WriteFile(f, "new", input)
 				}); err != nil {
 					log.Printf("failed to create new file: %v", err)
+				}
+			case "Remove":
+				// Read chorded argument
+				input := strings.TrimSpace(string(e.Arg))
+				if input == "" {
+					log.Printf("New: no input provided")
+					break
+				}
+
+				// Write to denote/<identifier>/event via 9P
+				if err := fs.With9P(func(f *client.Fsys) error {
+					return fs.WriteFile(f, filepath.Join(input, "event"), "d")
+				}); err != nil {
+					log.Printf("failed to delete file: %v", err)
 				}
 			case "Reset":
 				rs, err := denote.Search(fs.Filters{})

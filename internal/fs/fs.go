@@ -1006,7 +1006,20 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		default:
 		}
 	case "event":
-		// Emit custom event (e.g., "r" for rename)
+		// Handle delete event specially
+		if value == "d" {
+			// Remove from in-memory state
+			s.mu.Lock()
+			for i, n := range s.notes {
+				if n.Identifier == noteID {
+					s.notes = append(s.notes[:i], s.notes[i+1:]...)
+					break
+				}
+			}
+			s.mu.Unlock()
+		}
+
+		// Emit custom event (e.g., "r" for rename, "d" for delete)
 		event := noteID + " " + value
 		select {
 		case s.eventChan <- event:
