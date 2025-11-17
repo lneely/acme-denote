@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"unicode"
+
+	"9fans.net/go/plan9/client"
 )
 
 const (
@@ -56,7 +58,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if err = ui.TagSet(w, "Reset Sync"); err != nil {
+	if err = ui.TagSet(w, "Reset Sync Put"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -86,6 +88,34 @@ func main() {
 			case "Sync":
 				if err := sync.SyncAll(); err != nil {
 					log.Printf("sync error: %v", err)
+				}
+			case "Put":
+				body, err := w.ReadAll("body")
+				if err != nil {
+					log.Printf("failed to read window body: %v", err)
+					break
+				}
+
+				// Parse the window content
+				var emptyResults fs.Results
+				updated, err := emptyResults.FromString(string(body))
+				if err != nil {
+					log.Printf("failed to parse window: %v", err)
+					break
+				}
+
+				// Get current results and apply changes
+				current, err := denote.Search(fs.Filters{})
+				if err != nil {
+					log.Printf("failed to get current results: %v", err)
+					break
+				}
+
+				// Validate and apply changes via individual file writes
+				if err := fs.With9P(func(f *client.Fsys) error {
+					return applyIndexChanges(f, current, updated)
+				}); err != nil {
+					log.Printf("failed to apply changes: %v", err)
 				}
 			default:
 				w.WriteEvent(e)
@@ -148,17 +178,7 @@ func performSearch(w *ui.Window, searchText string) {
 }
 
 func refreshWindow(w *ui.Window, rs fs.Results) {
-	// write initial results to window
-	content := ""
-	for _, n := range rs {
-		content += fmt.Sprintf("denote:%s | %s |", n.Identifier, n.Title)
-		for _, t := range n.Tags {
-			content += fmt.Sprintf("%s,", t)
-		}
-		content = strings.TrimSuffix(content, ",")
-		content += "\n"
-	}
-	ui.BodyWrite(w, ",", []byte(content))
+	ui.BodyWrite(w, ",", rs.Bytes())
 }
 
 // parseArgs parses space-separated arguments, handling quoted strings
@@ -212,4 +232,45 @@ func parseArgs(s string) []string {
 	}
 
 	return args
+}
+
+func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
+	// Validate entry count matches
+	if len(updated) != len(current) {
+		return fmt.Errorf("entry count mismatch: got %d, expected %d", len(updated), len(current))
+	}
+
+	// Build map of current state
+	currentMap := make(map[string]*fs.Metadata)
+	for _, m := range current {
+		currentMap[m.Identifier] = m
+	}
+
+	// Write title and keywords for changed entries
+	for _, upd := range updated {
+		orig, exists := currentMap[upd.Identifier]
+		if !exists {
+			return fmt.Errorf("identifier '%s' not found", upd.Identifier)
+		}
+
+		// Check if anything changed
+		titleChanged := orig.Title != upd.Title
+		tagsChanged := !fs.SlicesEqual(orig.Tags, upd.Tags)
+
+		if titleChanged || tagsChanged {
+			// Write both title and keywords
+			titlePath := upd.Identifier + "/title"
+			if err := fs.WriteFile(f, titlePath, upd.Title); err != nil {
+				return fmt.Errorf("failed to write title for %s: %w", upd.Identifier, err)
+			}
+
+			keywordsPath := upd.Identifier + "/keywords"
+			keywords := strings.Join(upd.Tags, ",")
+			if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
+				return fmt.Errorf("failed to write keywords for %s: %w", upd.Identifier, err)
+			}
+		}
+	}
+
+	return nil
 }

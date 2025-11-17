@@ -54,10 +54,71 @@ func (es Results) Bytes() []byte {
 			title = "(untitled)"
 		}
 
-		tags := strings.Join(e.Tags, ", ")
-		fmt.Fprintf(&buf, "denote:%s | %s | %s\n", e.Identifier, title, tags)
+		tags := strings.Join(e.Tags, ",")
+		fmt.Fprintf(&buf, "%s | %s | %s\n", e.Identifier, title, tags)
 	}
 	return []byte(buf.String())
+}
+
+func (es Results) FromString(data string) (Results, error) {
+	var results Results
+	lines := strings.Split(strings.TrimSpace(data), "\n")
+	// Allow lowercase unicode letters and digits, no spaces
+	tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
+
+	for lineNum, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, "|")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("line %d: expected 3 columns, got %d (line: %q)", lineNum+1, len(parts), line)
+		}
+
+		identifier := strings.TrimSpace(parts[0])
+		title := strings.TrimSpace(parts[1])
+		tagsStr := strings.TrimSpace(parts[2])
+
+		if identifier == "" {
+			return nil, fmt.Errorf("line %d: identifier cannot be empty", lineNum+1)
+		}
+
+		if strings.Contains(title, "|") {
+			return nil, fmt.Errorf("line %d: title cannot contain '|'", lineNum+1)
+		}
+
+		var tags []string
+		if tagsStr != "" {
+			if !tagPattern.MatchString(tagsStr) {
+				return nil, fmt.Errorf("line %d: tags must be comma-delimited lowercase unicode words (no spaces): got '%s'", lineNum+1, tagsStr)
+			}
+			tags = strings.Split(tagsStr, ",")
+		} else {
+			tags = []string{}
+		}
+
+		results = append(results, &Metadata{
+			Identifier: identifier,
+			Title:      title,
+			Tags:       tags,
+		})
+	}
+
+	return results, nil
+}
+
+func SlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Filter matches a given field in a Result to a regular expression
@@ -792,12 +853,15 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	switch fieldName {
 	case "title":
 		note.Title = value
-		// Metadata up to date, trigger file rename
-		event := noteID + " r"
+		// Emit update event (update front matter)
 		select {
-		case s.eventChan <- event:
+		case s.eventChan <- noteID + " u":
 		default:
-			// Channel full, drop event
+		}
+		// Emit rename event (rename file)
+		select {
+		case s.eventChan <- noteID + " r":
+		default:
 		}
 	case "keywords":
 		if value == "" {
@@ -809,12 +873,15 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			}
 			note.Tags = tags
 		}
-		// Metadata up to date, trigger file rename
-		event := noteID + " r"
+		// Emit update event (update front matter)
 		select {
-		case s.eventChan <- event:
+		case s.eventChan <- noteID + " u":
 		default:
-			// Channel full, drop event
+		}
+		// Emit rename event (rename file)
+		select {
+		case s.eventChan <- noteID + " r":
+		default:
 		}
 	case "event":
 		// Emit custom event (e.g., "r" for rename)
@@ -1019,16 +1086,7 @@ func (s *server) pathToNoteIndex(path string) int {
 }
 
 func (s *server) getIndexContent() string {
-	content := ""
-	for _, n := range s.notes {
-		content += fmt.Sprintf("%s|%s|", n.Identifier, n.Title)
-		for _, t := range n.Tags {
-			content += fmt.Sprintf("%s,", t)
-		}
-		content = strings.TrimSuffix(content, ",")
-		content += "\n"
-	}
-	return content
+	return string(s.notes.Bytes())
 }
 
 func (s *server) getFileContent(path string) string {
