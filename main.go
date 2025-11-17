@@ -70,6 +70,9 @@ func main() {
 	fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
 	refreshWindow(w, rs)
 
+	ui.WindowDirty(w, false)
+	ui.DotToAddr(w, "#0")
+
 	// event loop
 	for e := range w.EventChan() {
 		switch e.C2 {
