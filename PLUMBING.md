@@ -18,7 +18,7 @@ plumb to denote
 type is text
 data matches 'denote:([0-9]+T[0-9]+)'
 plumb to denote
-plumb start Denote open $1
+plumb start Denote $1
 ```
 
 ### Rule Placement
