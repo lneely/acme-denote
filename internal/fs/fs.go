@@ -30,6 +30,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
@@ -268,6 +269,7 @@ const (
 	qidFileBase = 1000001
 	qidIndex    = 999999
 	qidEvent    = 999998
+	qidNew      = 999997
 )
 
 // File types within a note directory
@@ -454,6 +456,53 @@ func UpdatePath(identifier string, newPath string) error {
 	for _, note := range srv.notes {
 		if note.Identifier == identifier {
 			note.Path = newPath
+			return nil
+		}
+	}
+
+	return fmt.Errorf("note not found: %s", identifier)
+}
+
+func AddNote(note *Metadata) error {
+	if srv == nil {
+		return fmt.Errorf("server not running")
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	srv.notes = append(srv.notes, note)
+	return nil
+}
+
+func GetNote(identifier string) (*Metadata, error) {
+	if srv == nil {
+		return nil, fmt.Errorf("server not running")
+	}
+
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+
+	for _, note := range srv.notes {
+		if note.Identifier == identifier {
+			return note, nil
+		}
+	}
+
+	return nil, fmt.Errorf("note not found: %s", identifier)
+}
+
+func UpdateNotePath(identifier, path string) error {
+	if srv == nil {
+		return fmt.Errorf("server not running")
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	for _, note := range srv.notes {
+		if note.Identifier == identifier {
+			note.Path = path
 			return nil
 		}
 	}
@@ -661,6 +710,14 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/event"
 				found = true
+			} else if "new" == name {
+				qid := plan9.Qid{
+					Type: QTFile,
+					Path: uint64(qidNew),
+				}
+				qids = append(qids, qid)
+				path = "/new"
+				found = true
 			} else {
 				for i, note := range s.notes {
 					if note.Identifier == name {
@@ -825,6 +882,71 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		return errorFcall(fc, "file not open for writing")
 	}
 
+	// Handle writes to /new
+	if f.path == "/new" {
+		input := strings.TrimSpace(string(fc.Data))
+
+		// Parse: 'Title' tag1,tag2,...
+		// Extract title (must be single-quoted)
+		if !strings.HasPrefix(input, "'") {
+			return errorFcall(fc, "title must be single-quoted")
+		}
+
+		closeQuote := strings.Index(input[1:], "'")
+		if closeQuote == -1 {
+			return errorFcall(fc, "title must be single-quoted (missing closing quote)")
+		}
+
+		title := input[1 : closeQuote+1]
+		if title == "" {
+			return errorFcall(fc, "title cannot be empty")
+		}
+
+		// Extract tags (everything after closing quote)
+		remainder := strings.TrimSpace(input[closeQuote+2:])
+		var tags []string
+		if remainder != "" {
+			// Validate tags
+			tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
+			if !tagPattern.MatchString(remainder) {
+				return errorFcall(fc, "tags must be comma-delimited lowercase unicode words (no spaces)")
+			}
+			tags = strings.Split(remainder, ",")
+		}
+
+		// Generate timestamp identifier
+		identifier := time.Now().Format("20060102T150405")
+
+		// Create metadata entry with temporary path
+		// (actual file will be created by denote package event handler)
+		metadata := &Metadata{
+			Identifier: identifier,
+			Title:      title,
+			Tags:       tags,
+			Extension:  ".md",
+			Path:       "", // Will be set when file is created
+		}
+
+		// Add to in-memory state
+		s.mu.Lock()
+		s.notes = append(s.notes, metadata)
+		s.mu.Unlock()
+
+		// Emit event notification
+		event := fmt.Sprintf("%s n", identifier)
+		select {
+		case s.eventChan <- event:
+		default:
+			// Channel full, drop event
+		}
+
+		return &plan9.Fcall{
+			Type:  plan9.Rwrite,
+			Tag:   fc.Tag,
+			Count: uint32(len(fc.Data)),
+		}
+	}
+
 	// Extract note identifier and field name from path
 	parts := strings.Split(strings.Trim(f.path, "/"), "/")
 	if len(parts) != 2 {
@@ -971,6 +1093,19 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			},
 			Mode:   0444,
 			Name:   "event",
+			Uid:    "denote",
+			Gid:    "denote",
+			Muid:   "denote",
+			Length: 0,
+		})
+		// add new node
+		dirs = append(dirs, plan9.Dir{
+			Qid: plan9.Qid{
+				Type: QTFile,
+				Path: uint64(qidNew),
+			},
+			Mode:   0222,
+			Name:   "new",
 			Uid:    "denote",
 			Gid:    "denote",
 			Muid:   "denote",

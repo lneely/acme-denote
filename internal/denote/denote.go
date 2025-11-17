@@ -509,6 +509,10 @@ func EventListener() {
 					if err := handleRenameEvent(f, identifier); err != nil {
 						log.Printf("error handling rename for %s: %v", identifier, err)
 					}
+				case "n":
+					if err := handleNewEvent(identifier); err != nil {
+						log.Printf("error handling new for %s: %v", identifier, err)
+					}
 				}
 			}
 		})
@@ -621,5 +625,30 @@ func handleRenameEvent(f *client.Fsys, identifier string) error {
 		}
 	}
 
+	return nil
+}
+
+func handleNewEvent(identifier string) error {
+	// Retrieve metadata from in-memory state
+	metadata, err := fs.GetNote(identifier)
+	if err != nil {
+		return fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	// Get denote directory
+	denoteDir := GetDir()
+
+	// Create new note file using existing NewNote function
+	path, err := NewNote(denoteDir, metadata.Title, metadata.Tags, "md-yaml", identifier)
+	if err != nil {
+		return fmt.Errorf("failed to create note file: %w", err)
+	}
+
+	// Update the path in the metadata
+	if err := fs.UpdateNotePath(identifier, path); err != nil {
+		return fmt.Errorf("failed to update path in metadata: %w", err)
+	}
+
+	log.Printf("created new note: %s at %s", identifier, path)
 	return nil
 }

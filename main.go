@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode"
 
+	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
 )
 
@@ -58,7 +59,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if err = ui.TagSet(w, "Reset Sync Put"); err != nil {
+	if err = ui.TagSet(w, "New Reset Sync Put"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -70,6 +71,49 @@ func main() {
 	fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
 	refreshWindow(w, rs)
 
+	// listen for 'n' events to refresh window
+	go func() {
+		for {
+			err := fs.With9P(func(f *client.Fsys) error {
+				// Open event file (blocking reads)
+				fid, err := f.Open("event", plan9.OREAD)
+				if err != nil {
+					return fmt.Errorf("failed to open event file: %w", err)
+				}
+				defer fid.Close()
+
+				// Read events in loop
+				buf := make([]byte, 8192)
+				for {
+					n, err := fid.Read(buf)
+					if err != nil {
+						return fmt.Errorf("failed to read event: %w", err)
+					}
+					if n == 0 {
+						continue
+					}
+
+					event := strings.TrimSpace(string(buf[:n]))
+					parts := strings.Fields(event)
+					if len(parts) >= 2 && parts[1] == "n" {
+						// Refresh window with new results
+						rs, err := denote.Search(fs.Filters{})
+						if err != nil {
+							log.Printf("error refreshing after new file: %v", err)
+							continue
+						}
+						fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
+						refreshWindow(w, rs)
+					}
+				}
+			})
+
+			if err != nil {
+				log.Printf("window event listener error: %v", err)
+			}
+		}
+	}()
+
 	ui.WindowDirty(w, false)
 	ui.DotToAddr(w, "#0")
 
@@ -78,6 +122,20 @@ func main() {
 		switch e.C2 {
 		case 'x', 'X':
 			switch string(e.Text) {
+			case "New":
+				// Read chorded argument
+				input := strings.TrimSpace(string(e.Arg))
+				if input == "" {
+					log.Printf("New: no input provided")
+					break
+				}
+
+				// Write to denote/new via 9P
+				if err := fs.With9P(func(f *client.Fsys) error {
+					return fs.WriteFile(f, "new", input)
+				}); err != nil {
+					log.Printf("failed to create new file: %v", err)
+				}
 			case "Reset":
 				rs, err := denote.Search(fs.Filters{})
 				if err != nil {
@@ -182,6 +240,7 @@ func performSearch(w *ui.Window, searchText string) {
 
 func refreshWindow(w *ui.Window, rs fs.Results) {
 	ui.BodyWrite(w, ",", rs.Bytes())
+	ui.DotToAddr(w, "#0")
 }
 
 // parseArgs parses space-separated arguments, handling quoted strings
