@@ -44,6 +44,19 @@ func readFile(f *client.Fsys, path string) (string, error) {
 	return strings.TrimSpace(string(content)), nil
 }
 
+// read9PFields reads multiple 9P fields for a note
+func read9PFields(f *client.Fsys, identifier string, fields ...string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, field := range fields {
+		val, err := readFile(f, identifier+"/"+field)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", field, err)
+		}
+		result[field] = val
+	}
+	return result, nil
+}
+
 // Search returns metadata for notes by reading from the 9P index
 func Search(filters []*fs.Filter) (fs.Results, error) {
 	var results fs.Results
@@ -447,7 +460,6 @@ func Open(filePath string) error {
 
 // IdentifierToPath converts a denote identifier to a file path
 func IdentifierToPath(identifier string) (string, error) {
-	fmt.Println("IdentifierToPath: ", identifier)
 	filter, err := fs.NewFilter(fmt.Sprintf("date:%s", identifier))
 	if err != nil {
 		return "", fmt.Errorf("invalid identifier: %w", err)
@@ -461,7 +473,6 @@ func IdentifierToPath(identifier string) (string, error) {
 	if len(notes) == 0 {
 		return "", fmt.Errorf("no note found with identifier %s", identifier)
 	}
-	fmt.Println("IdentifierToPath: ", notes[0].Path)
 
 	return notes[0].Path, nil
 }
@@ -530,25 +541,15 @@ func EventListener() {
 
 func handleUpdateEvent(f *client.Fsys, identifier string) error {
 	// Read current metadata via 9P
-	title, err := readFile(f, identifier+"/title")
+	fields, err := read9PFields(f, identifier, "title", "keywords", "path", "extension")
 	if err != nil {
-		return fmt.Errorf("failed to read title: %w", err)
+		return err
 	}
 
-	keywords, err := readFile(f, identifier+"/keywords")
-	if err != nil {
-		return fmt.Errorf("failed to read keywords: %w", err)
-	}
-
-	path, err := readFile(f, identifier+"/path")
-	if err != nil {
-		return fmt.Errorf("failed to read path: %w", err)
-	}
-
-	ext, err := readFile(f, identifier+"/extension")
-	if err != nil {
-		return fmt.Errorf("failed to read extension: %w", err)
-	}
+	title := fields["title"]
+	keywords := fields["keywords"]
+	path := fields["path"]
+	ext := fields["extension"]
 
 	// Parse tags from keywords
 	var tags []string
@@ -593,20 +594,14 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 
 func handleRenameEvent(f *client.Fsys, identifier string) error {
 	// Read current metadata via 9P
-	title, err := readFile(f, identifier+"/title")
+	fields, err := read9PFields(f, identifier, "title", "keywords", "path")
 	if err != nil {
-		return fmt.Errorf("failed to read title: %w", err)
+		return err
 	}
 
-	keywords, err := readFile(f, identifier+"/keywords")
-	if err != nil {
-		return fmt.Errorf("failed to read keywords: %w", err)
-	}
-
-	path, err := readFile(f, identifier+"/path")
-	if err != nil {
-		return fmt.Errorf("failed to read path: %w", err)
-	}
+	title := fields["title"]
+	keywords := fields["keywords"]
+	path := fields["path"]
 
 	// Parse tags from keywords
 	var tags []string
@@ -624,7 +619,7 @@ func handleRenameEvent(f *client.Fsys, identifier string) error {
 
 	// Update path in in-memory metadata if it changed
 	if newPath != path {
-		if err := fs.UpdatePath(identifier, newPath); err != nil {
+		if err := fs.UpdateNotePath(identifier, newPath); err != nil {
 			return fmt.Errorf("failed to update path: %w", err)
 		}
 	}

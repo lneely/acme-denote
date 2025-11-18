@@ -100,14 +100,7 @@ func main() {
 					parts := strings.Fields(event)
 					if len(parts) >= 2 {
 						if parts[1] == "n" || parts[1] == "d" {
-							// Refresh window with new results
-							rs, err := denote.Search(fs.Filters{})
-							if err != nil {
-								log.Printf("error refreshing after new file: %v", err)
-								continue
-							}
-							fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
-							refreshWindow(w, rs)
+							refreshWindowWithDefaults(w)
 						}
 					}
 				}
@@ -156,12 +149,7 @@ func main() {
 					log.Printf("failed to delete file: %v", err)
 				}
 			case "Reset":
-				rs, err := denote.Search(fs.Filters{})
-				if err != nil {
-					panic(err)
-				}
-				fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
-				refreshWindow(w, rs)
+				refreshWindowWithDefaults(w)
 			case "Look":
 				// Use e.Arg for the search arguments
 				performSearch(w, string(e.Arg))
@@ -270,6 +258,16 @@ func performSearch(w *ui.Window, searchText string) {
 func refreshWindow(w *ui.Window, rs fs.Results) {
 	ui.BodyWrite(w, ",", rs.Bytes())
 	ui.DotToAddr(w, "#0")
+}
+
+func refreshWindowWithDefaults(w *ui.Window) {
+	rs, err := denote.Search(fs.Filters{})
+	if err != nil {
+		log.Printf("error refreshing: %v", err)
+		return
+	}
+	fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
+	refreshWindow(w, rs)
 }
 
 // parseArgs parses space-separated arguments, handling quoted strings

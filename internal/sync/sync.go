@@ -107,8 +107,8 @@ func syncFrontMatter(path, identifier string) error {
 		}
 
 		// Trigger rename event
-		eventPath := identifier + "/event"
-		if err := fs.WriteFile(f, eventPath, "r"); err != nil {
+		ctlPath := identifier + "/ctl"
+		if err := fs.WriteFile(f, ctlPath, "r"); err != nil {
 			return err
 		}
 
@@ -217,8 +217,8 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 	}
 
 	// Trigger rename event
-	eventPath := identifier + "/event"
-	if err := fs.WriteFile(f, eventPath, "r"); err != nil {
+	ctlPath := identifier + "/ctl"
+	if err := fs.WriteFile(f, ctlPath, "r"); err != nil {
 		return err
 	}
 

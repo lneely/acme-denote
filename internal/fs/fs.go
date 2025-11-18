@@ -311,6 +311,27 @@ type fid struct {
 
 var srv *server
 
+// findNote finds a note by identifier in the in-memory collection
+func findNote(identifier string) (*Metadata, error) {
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+	for _, n := range srv.notes {
+		if n.Identifier == identifier {
+			return n, nil
+		}
+	}
+	return nil, fmt.Errorf("note not found: %s", identifier)
+}
+
+// emitEvent queues an event for broadcast
+func emitEvent(id string, op rune) {
+	event := fmt.Sprintf("%s %c", id, op)
+	select {
+	case srv.eventChan <- event:
+	default:
+	}
+}
+
 // ExtractMetadata extracts Denote metadata from a filename
 func ExtractMetadata(path string) *Metadata {
 	fname := filepath.Base(path)
@@ -447,25 +468,6 @@ func WriteFile(f *client.Fsys, path string, data string) error {
 	return err
 }
 
-// UpdatePath updates the path for a note in the in-memory collection
-func UpdatePath(identifier string, newPath string) error {
-	if srv == nil {
-		return fmt.Errorf("server not running")
-	}
-
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-
-	for _, note := range srv.notes {
-		if note.Identifier == identifier {
-			note.Path = newPath
-			return nil
-		}
-	}
-
-	return fmt.Errorf("note not found: %s", identifier)
-}
-
 func AddNote(note *Metadata) error {
 	if srv == nil {
 		return fmt.Errorf("server not running")
@@ -483,16 +485,7 @@ func GetNote(identifier string) (*Metadata, error) {
 		return nil, fmt.Errorf("server not running")
 	}
 
-	srv.mu.RLock()
-	defer srv.mu.RUnlock()
-
-	for _, note := range srv.notes {
-		if note.Identifier == identifier {
-			return note, nil
-		}
-	}
-
-	return nil, fmt.Errorf("note not found: %s", identifier)
+	return findNote(identifier)
 }
 
 func UpdateNotePath(identifier, path string) error {
@@ -500,17 +493,15 @@ func UpdateNotePath(identifier, path string) error {
 		return fmt.Errorf("server not running")
 	}
 
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-
-	for _, note := range srv.notes {
-		if note.Identifier == identifier {
-			note.Path = path
-			return nil
-		}
+	note, err := findNote(identifier)
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("note not found: %s", identifier)
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	note.Path = path
+	return nil
 }
 
 // StartServer starts the 9P fileserver in the background
@@ -936,12 +927,7 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		s.mu.Unlock()
 
 		// Emit event notification
-		event := fmt.Sprintf("%s n", identifier)
-		select {
-		case s.eventChan <- event:
-		default:
-			// Channel full, drop event
-		}
+		emitEvent(identifier, 'n')
 
 		return &plan9.Fcall{
 			Type:  plan9.Rwrite,
@@ -959,17 +945,9 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	noteID := parts[0]
 	fieldName := parts[1]
 
-	// Find note in s.notes
-	var note *Metadata
-	for _, n := range s.notes {
-		if n.Identifier == noteID {
-			note = n
-			break
-		}
-	}
-
-	if note == nil {
-		return errorFcall(fc, "note not found")
+	note, err := findNote(noteID)
+	if err != nil {
+		return errorFcall(fc, err.Error())
 	}
 
 	// Update the field in memory only
@@ -978,16 +956,8 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	switch fieldName {
 	case "title":
 		note.Title = value
-		// Emit update event (update front matter)
-		select {
-		case s.eventChan <- noteID + " u":
-		default:
-		}
-		// Emit rename event (rename file)
-		select {
-		case s.eventChan <- noteID + " r":
-		default:
-		}
+		emitEvent(noteID, 'u')
+		emitEvent(noteID, 'r')
 	case "keywords":
 		if value == "" {
 			note.Tags = []string{}
@@ -998,16 +968,8 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			}
 			note.Tags = tags
 		}
-		// Emit update event (update front matter)
-		select {
-		case s.eventChan <- noteID + " u":
-		default:
-		}
-		// Emit rename event (rename file)
-		select {
-		case s.eventChan <- noteID + " r":
-		default:
-		}
+		emitEvent(noteID, 'u')
+		emitEvent(noteID, 'r')
 	case "ctl":
 		// Handle delete event specially
 		if value == "d" {
@@ -1023,11 +985,8 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		}
 
 		// Emit custom event (e.g., "r" for rename, "d" for delete)
-		event := noteID + " " + value
-		select {
-		case s.eventChan <- event:
-		default:
-			// Channel full, drop event
+		if len(value) == 1 {
+			emitEvent(noteID, rune(value[0]))
 		}
 	default:
 		return errorFcall(fc, "field is read-only")
@@ -1253,15 +1212,8 @@ func (s *server) getFileContent(path string) string {
 	noteID := parts[0]
 	fileName := parts[1]
 
-	var note *Metadata
-	for _, n := range s.notes {
-		if n.Identifier == noteID {
-			note = n
-			break
-		}
-	}
-
-	if note == nil {
+	note, err := findNote(noteID)
+	if err != nil {
 		return ""
 	}
 
