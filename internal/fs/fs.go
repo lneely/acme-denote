@@ -4,19 +4,21 @@ denote metadata for all files in the denote directory. The filesystem is organiz
 follows:
 
 	denote/                 (directory)  Root filesystem
-		<identifier>/       (directory)  Unique denote file identifier
-			ctl				(write-only) Control file (publish rename, update, and delete events)
-			extension		(read-only)  Underlying file extension (e.g., org, md, txt)
-			keywords		(read-write) File tags
-			path			(read-only)  Path on underlying filesystem
-			title			(read-write) Denote document title
 		event				(read-only)  Global event bus (listen & react to rename, update, and delete events)
 		index				(read-only)  Metadata index, supports search functionality
+		new					(write-only) Create new note (write "'title' tag1,tag2")
+		n/					(directory)  Notes directory
+			<identifier>/   (directory)  Unique denote file identifier
+				ctl			(write-only) Control file (publish rename, update, and delete events)
+				extension	(read-only)  Underlying file extension (e.g., org, md, txt)
+				keywords	(read-write) File tags
+				path		(read-only)  Path on underlying filesystem
+				title		(read-write) Denote document title
 
 Notes:
 - Messages written to the ctl file may generate events that are broadcast over the global event bus.
 - Writing to title or keywords triggers an update ('u') event and a rename ('r') event
-- Write 'd' to denote/<identifier>/ctl to delete a denote file
+- Write 'd' to denote/n/<identifier>/ctl to delete a denote file
 - Write "'document title' tag1,tag2,(...)" to denote/new to create a new denote file
 */
 package fs
@@ -272,6 +274,7 @@ const (
 	qidIndex    = 999999
 	qidEvent    = 999998
 	qidNew      = 999997
+	qidNDir     = 999996
 )
 
 // File types within a note directory
@@ -686,7 +689,7 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 
 	for _, name := range fc.Wname {
 		if path == "/" {
-			// Walking from root - should be a note ID
+			// Walking from root
 			found := false
 			if "index" == name {
 				qid := plan9.Qid{
@@ -712,18 +715,31 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/new"
 				found = true
-			} else {
-				for i, note := range s.notes {
-					if note.Identifier == name {
-						qid := plan9.Qid{
-							Type: QTDir,
-							Path: uint64(qidNoteBase + i),
-						}
-						qids = append(qids, qid)
-						path = "/" + name
-						found = true
-						break
+			} else if "n" == name {
+				qid := plan9.Qid{
+					Type: QTDir,
+					Path: uint64(qidNDir),
+				}
+				qids = append(qids, qid)
+				path = "/n"
+				found = true
+			}
+			if !found {
+				return errorFcall(fc, "file not found")
+			}
+		} else if path == "/n" {
+			// Walking from /n - should be a note identifier
+			found := false
+			for i, note := range s.notes {
+				if note.Identifier == name {
+					qid := plan9.Qid{
+						Type: QTDir,
+						Path: uint64(qidNoteBase + i),
 					}
+					qids = append(qids, qid)
+					path = "/n/" + name
+					found = true
+					break
 				}
 			}
 			if !found {
@@ -938,12 +954,12 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 
 	// Extract note identifier and field name from path
 	parts := strings.Split(strings.Trim(f.path, "/"), "/")
-	if len(parts) != 2 {
+	if len(parts) != 3 || parts[0] != "n" {
 		return errorFcall(fc, "invalid path")
 	}
 
-	noteID := parts[0]
-	fieldName := parts[1]
+	noteID := parts[1]
+	fieldName := parts[2]
 
 	note, err := findNote(noteID)
 	if err != nil {
@@ -1047,19 +1063,6 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 	var dirs []plan9.Dir
 
 	if path == "/" {
-		// add index node
-		dirs = append(dirs, plan9.Dir{
-			Qid: plan9.Qid{
-				Type: QTFile,
-				Path: uint64(qidIndex),
-			},
-			Mode:   0444,
-			Name:   "index",
-			Uid:    "denote",
-			Gid:    "denote",
-			Muid:   "denote",
-			Length: 0,
-		})
 		// add event node
 		dirs = append(dirs, plan9.Dir{
 			Qid: plan9.Qid{
@@ -1068,6 +1071,19 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			},
 			Mode:   0444,
 			Name:   "event",
+			Uid:    "denote",
+			Gid:    "denote",
+			Muid:   "denote",
+			Length: 0,
+		})
+		// add index node
+		dirs = append(dirs, plan9.Dir{
+			Qid: plan9.Qid{
+				Type: QTFile,
+				Path: uint64(qidIndex),
+			},
+			Mode:   0444,
+			Name:   "index",
 			Uid:    "denote",
 			Gid:    "denote",
 			Muid:   "denote",
@@ -1086,6 +1102,22 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			Muid:   "denote",
 			Length: 0,
 		})
+		// add n directory
+		dirs = append(dirs, plan9.Dir{
+			Qid: plan9.Qid{
+				Type: QTDir,
+				Path: uint64(qidNDir),
+			},
+			Mode:   plan9.DMDIR | 0555,
+			Name:   "n",
+			Uid:    "denote",
+			Gid:    "denote",
+			Muid:   "denote",
+			Length: 0,
+		})
+	} else if path == "/index" {
+
+	} else if path == "/n" {
 		// List all note IDs
 		for i, note := range s.notes {
 			dirs = append(dirs, plan9.Dir{
@@ -1101,8 +1133,6 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 				Length: 0,
 			})
 		}
-	} else if path == "/index" {
-
 	} else {
 		// List files in a note directory
 		noteIdx := s.pathToNoteIndex(path)
@@ -1182,11 +1212,11 @@ func (s *server) pathToDir(path string, qid plan9.Qid) plan9.Dir {
 
 func (s *server) pathToNoteIndex(path string) int {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 0 {
+	if len(parts) < 2 || parts[0] != "n" {
 		return -1
 	}
 
-	noteID := parts[0]
+	noteID := parts[1]
 	for i, note := range s.notes {
 		if note.Identifier == noteID {
 			return i
@@ -1205,12 +1235,12 @@ func (s *server) getFileContent(path string) string {
 	}
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 {
+	if len(parts) != 3 || parts[0] != "n" {
 		return ""
 	}
 
-	noteID := parts[0]
-	fileName := parts[1]
+	noteID := parts[1]
+	fileName := parts[2]
 
 	note, err := findNote(noteID)
 	if err != nil {

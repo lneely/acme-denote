@@ -48,7 +48,7 @@ func readFile(f *client.Fsys, path string) (string, error) {
 func read9PFields(f *client.Fsys, identifier string, fields ...string) (map[string]string, error) {
 	result := make(map[string]string)
 	for _, field := range fields {
-		val, err := readFile(f, identifier+"/"+field)
+		val, err := readFile(f, "n/"+identifier+"/"+field)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", field, err)
 		}
@@ -85,13 +85,13 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 			}
 
 			// Read remaining fields from note directory
-			if path, err := readFile(f, identifier+"/path"); err == nil {
+			if path, err := readFile(f, "n/"+identifier+"/path"); err == nil {
 				meta.Path = path
 			}
-			if ext, err := readFile(f, identifier+"/extension"); err == nil {
+			if ext, err := readFile(f, "n/"+identifier+"/extension"); err == nil {
 				meta.Extension = ext
 			}
-			if keywords, err := readFile(f, identifier+"/keywords"); err == nil && keywords != "" {
+			if keywords, err := readFile(f, "n/"+identifier+"/keywords"); err == nil && keywords != "" {
 				meta.Tags = strings.Split(keywords, ",")
 				for i := range meta.Tags {
 					meta.Tags[i] = strings.TrimSpace(meta.Tags[i])
@@ -100,7 +100,7 @@ func Search(filters []*fs.Filter) (fs.Results, error) {
 
 			// Read title - 9P server already returns file content title if available,
 			// otherwise filename-based title
-			if title, err := readFile(f, identifier+"/title"); err == nil {
+			if title, err := readFile(f, "n/"+identifier+"/title"); err == nil {
 				meta.Title = title
 			}
 

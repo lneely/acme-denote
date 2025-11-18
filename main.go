@@ -142,9 +142,9 @@ func main() {
 					break
 				}
 
-				// Write to denote/<identifier>/ctl via 9P
+				// Write to denote/n/<identifier>/ctl via 9P
 				if err := fs.With9P(func(f *client.Fsys) error {
-					return fs.WriteFile(f, filepath.Join(input, "ctl"), "d")
+					return fs.WriteFile(f, filepath.Join("n", input, "ctl"), "d")
 				}); err != nil {
 					log.Printf("failed to delete file: %v", err)
 				}
@@ -348,12 +348,12 @@ func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
 
 		if titleChanged || tagsChanged {
 			// Write both title and keywords
-			titlePath := upd.Identifier + "/title"
+			titlePath := "n/" + upd.Identifier + "/title"
 			if err := fs.WriteFile(f, titlePath, upd.Title); err != nil {
 				return fmt.Errorf("failed to write title for %s: %w", upd.Identifier, err)
 			}
 
-			keywordsPath := upd.Identifier + "/keywords"
+			keywordsPath := "n/" + upd.Identifier + "/keywords"
 			keywords := strings.Join(upd.Tags, ",")
 			if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
 				return fmt.Errorf("failed to write keywords for %s: %w", upd.Identifier, err)

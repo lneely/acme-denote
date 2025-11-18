@@ -94,20 +94,20 @@ func syncFrontMatter(path, identifier string) error {
 	// Write to 9P filesystem
 	return fs.With9P(func(f *client.Fsys) error {
 		// Write title (triggers 'u' event)
-		titlePath := identifier + "/title"
+		titlePath := "n/" + identifier + "/title"
 		if err := fs.WriteFile(f, titlePath, fm.Title); err != nil {
 			return err
 		}
 
 		// Write keywords (triggers 'u' event)
 		keywords := strings.Join(fm.Tags, ",")
-		keywordsPath := identifier + "/keywords"
+		keywordsPath := "n/" + identifier + "/keywords"
 		if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
 			return err
 		}
 
 		// Trigger rename event
-		ctlPath := identifier + "/ctl"
+		ctlPath := "n/" + identifier + "/ctl"
 		if err := fs.WriteFile(f, ctlPath, "r"); err != nil {
 			return err
 		}
@@ -159,7 +159,7 @@ func SyncAll() error {
 			}
 
 			// Read path and extension
-			pathFid, err := f.Open(identifier+"/path", 0)
+			pathFid, err := f.Open("n/"+identifier+"/path", 0)
 			if err != nil {
 				log.Printf("sync: failed to read path for %s: %v", identifier, err)
 				continue
@@ -169,7 +169,7 @@ func SyncAll() error {
 			pathFid.Close()
 			path := strings.TrimSpace(string(pathBuf[:n]))
 
-			extFid, err := f.Open(identifier+"/extension", 0)
+			extFid, err := f.Open("n/"+identifier+"/extension", 0)
 			if err != nil {
 				log.Printf("sync: failed to read extension for %s: %v", identifier, err)
 				continue
@@ -204,20 +204,20 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 	}
 
 	// Write title (triggers 'u' event)
-	titlePath := identifier + "/title"
+	titlePath := "n/" + identifier + "/title"
 	if err := fs.WriteFile(f, titlePath, fm.Title); err != nil {
 		return err
 	}
 
 	// Write keywords (triggers 'u' event)
 	keywords := strings.Join(fm.Tags, ",")
-	keywordsPath := identifier + "/keywords"
+	keywordsPath := "n/" + identifier + "/keywords"
 	if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
 		return err
 	}
 
 	// Trigger rename event
-	ctlPath := identifier + "/ctl"
+	ctlPath := "n/" + identifier + "/ctl"
 	if err := fs.WriteFile(f, ctlPath, "r"); err != nil {
 		return err
 	}
@@ -231,14 +231,14 @@ func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	meta := fs.ExtractMetadata(path)
 
 	// Write title (triggers 'u' event)
-	titlePath := identifier + "/title"
+	titlePath := "n/" + identifier + "/title"
 	if err := fs.WriteFile(f, titlePath, meta.Title); err != nil {
 		return err
 	}
 
 	// Write keywords (triggers 'u' event)
 	keywords := strings.Join(meta.Tags, ",")
-	keywordsPath := identifier + "/keywords"
+	keywordsPath := "n/" + identifier + "/keywords"
 	if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
 		return err
 	}
