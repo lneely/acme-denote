@@ -9,6 +9,7 @@ package sync
 import (
 	"denote/internal/denote"
 	"denote/internal/fs"
+	"fmt"
 	"log"
 	"path/filepath"
 	"regexp"
@@ -55,9 +56,19 @@ func WatchAcmeLog() {
 				continue
 			}
 
-			// Sync front matter to 9P metadata
-			if err := syncFrontMatter(ev.Name, identifier); err != nil {
-				log.Printf("sync: failed to sync %s: %v", ev.Name, err)
+			// Check if note exists in 9P
+			exists := noteExists(identifier)
+
+			if exists {
+				// Existing note: sync front matter (triggers 'u' event)
+				if err := syncFrontMatter(ev.Name, identifier); err != nil {
+					log.Printf("sync: failed to sync %s: %v", ev.Name, err)
+				}
+			} else {
+				// New note: register with 9P (triggers 'n' event)
+				if err := registerNewNote(ev.Name); err != nil {
+					log.Printf("sync: failed to register %s: %v", ev.Name, err)
+				}
 			}
 		}
 	}
@@ -81,6 +92,37 @@ func extractIdentifier(path string) string {
 		return ""
 	}
 	return matches[1]
+}
+
+// noteExists checks if a note exists in 9P
+func noteExists(identifier string) bool {
+	err := fs.With9P(func(f *client.Fsys) error {
+		titlePath := "n/" + identifier + "/title"
+		fid, err := f.Open(titlePath, 0)
+		if err != nil {
+			return err
+		}
+		fid.Close()
+		return nil
+	})
+	return err == nil
+}
+
+// registerNewNote writes to /new to register a new note (triggers 'n' event)
+func registerNewNote(path string) error {
+	meta := fs.ExtractMetadata(path)
+
+	// Format as 'title' tag1,tag2
+	var newInput string
+	if len(meta.Tags) > 0 {
+		newInput = fmt.Sprintf("'%s' %s", meta.Title, strings.Join(meta.Tags, ","))
+	} else {
+		newInput = fmt.Sprintf("'%s'", meta.Title)
+	}
+
+	return fs.With9P(func(f *client.Fsys) error {
+		return fs.WriteFile(f, "new", newInput)
+	})
 }
 
 // syncFrontMatter reads the file's front matter and writes it to 9P metadata

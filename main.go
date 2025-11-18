@@ -128,12 +128,56 @@ func main() {
 					break
 				}
 
-				// Write to denote/new via 9P
-				if err := fs.With9P(func(f *client.Fsys) error {
-					return fs.WriteFile(f, "new", input)
-				}); err != nil {
-					log.Printf("failed to create new file: %v", err)
+				// Parse title and tags from input: 'title' tag1,tag2
+				if !strings.HasPrefix(input, "'") {
+					log.Printf("New: title must be single-quoted")
+					break
 				}
+
+				closeQuote := strings.Index(input[1:], "'")
+				if closeQuote == -1 {
+					log.Printf("New: title must be single-quoted (missing closing quote)")
+					break
+				}
+
+				title := input[1 : closeQuote+1]
+				if title == "" {
+					log.Printf("New: title cannot be empty")
+					break
+				}
+
+				// Extract tags (everything after closing quote)
+				remainder := strings.TrimSpace(input[closeQuote+2:])
+				var tags []string
+				if remainder != "" {
+					// Validate tags
+					tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
+					if !tagPattern.MatchString(remainder) {
+						log.Printf("New: tags must be comma-delimited lowercase unicode words (no spaces)")
+						break
+					}
+					tags = strings.Split(remainder, ",")
+				}
+
+				// Generate filename and content using denote package
+				fullPath, content := denote.GenerateNoteContent(denote.GetDir(), title, tags, "md-yaml", "")
+
+				// Create new Acme window
+				newWin, err := ui.WindowOpen(fullPath)
+				if err != nil {
+					log.Printf("New: failed to create window: %v", err)
+					break
+				}
+
+				// Write content to window
+				if err := ui.BodyWrite(newWin, "0", []byte(content)); err != nil {
+					log.Printf("New: failed to write content: %v", err)
+					newWin.Del(true)
+					break
+				}
+
+				ui.WindowDirty(newWin, true)
+				ui.DotToAddr(newWin, "$")
 			case "Remove":
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
@@ -365,7 +409,16 @@ func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
 }
 
 var identifierPattern = regexp.MustCompile(`^\d{8}T\d{6}$`)
+var filenameIdentifierPattern = regexp.MustCompile(`^(\d{8}T\d{6})--`)
 
 func isIdentifier(s string) bool {
 	return identifierPattern.MatchString(s)
+}
+
+func extractIdentifierFromFilename(filename string) string {
+	matches := filenameIdentifierPattern.FindStringSubmatch(filename)
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
 }

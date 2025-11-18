@@ -369,7 +369,8 @@ func rename(oldPath, title string, keywords []string, identifier string) (string
 	return newPath, nil
 }
 
-func NewNote(dir, title string, keywords []string, fileType, identifier string) (string, error) {
+// GenerateNoteContent generates filename and frontmatter content without writing to disk
+func GenerateNoteContent(dir, title string, keywords []string, fileType, identifier string) (path, content string) {
 	// Use provided identifier or generate new one
 	if identifier == "" {
 		identifier = time.Now().Format("20060102T150405")
@@ -386,14 +387,20 @@ func NewNote(dir, title string, keywords []string, fileType, identifier string) 
 
 	ext := fileExtensions[fileType]
 	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
-	path := filepath.Join(dir, filename)
+	path = filepath.Join(dir, filename)
 
 	// Generate front matter
 	template := templates[fileType]
 	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
 	keywordsStr := formatTags(keywords, fileType)
 
-	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier)
+	content = fmt.Sprintf(template, title, dateStr, keywordsStr, identifier)
+
+	return path, content
+}
+
+func NewNote(dir, title string, keywords []string, fileType, identifier string) (string, error) {
+	path, content := GenerateNoteContent(dir, title, keywords, fileType, identifier)
 
 	// Write file
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
