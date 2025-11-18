@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode"
 
+	"9fans.net/go/acme"
 	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
 )
@@ -178,6 +179,9 @@ func main() {
 
 				ui.WindowDirty(newWin, true)
 				ui.DotToAddr(newWin, "$")
+
+				// Start event listener for this note window
+				go watchNoteWindow(newWin, fullPath)
 			case "Remove":
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
@@ -421,4 +425,12 @@ func extractIdentifierFromFilename(filename string) string {
 		return ""
 	}
 	return matches[1]
+}
+
+func watchNoteWindow(win *acme.Win, path string) {
+	defer win.CloseFiles()
+
+	for e := range win.EventChan() {
+		win.WriteEvent(e)
+	}
 }

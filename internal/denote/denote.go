@@ -410,59 +410,10 @@ func NewNote(dir, title string, keywords []string, fileType, identifier string) 
 	return path, nil
 }
 
-// NewNoteEncrypted creates a new encrypted denote note using CryptPut
-func NewNoteEncrypted(dir, title string, keywords []string, fileType, identifier string) (string, error) {
-	if _, err := exec.LookPath("CryptPut"); err != nil {
-		fmt.Fprintf(os.Stderr, "CryptPut is not installed.\ngit clone https://github.com/lneely/acme-crypt\n")
-		return "", fmt.Errorf("CryptPut not available")
-	}
-
-	// Use provided identifier or generate new one
-	if identifier == "" {
-		identifier = time.Now().Format("20060102T150405")
-	}
-
-	// Format file name (without .gpg extension - CryptPut will add it)
-	titleSlug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
-	titleSlug = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(titleSlug, "")
-
-	var keywordsPart string
-	if len(keywords) > 0 {
-		keywordsPart = "__" + strings.Join(keywords, "_")
-	}
-
-	ext := fileExtensions[fileType]
-	filename := fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
-	plainPath := filepath.Join(dir, filename)
-
-	template := templates[fileType]
-	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
-	keywordsStr := formatTags(keywords, fileType)
-	content := fmt.Sprintf(template, title, dateStr, keywordsStr, identifier)
-
-	cmd := exec.Command("CryptPut", plainPath)
-	cmd.Stdin = strings.NewReader(content)
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to create encrypted file: %v", err)
-	}
-	encryptedPath := plainPath + ".gpg"
-
-	return encryptedPath, nil
-}
-
-// Open opens a file using the appropriate method based on file extension
+// Open opens a file using plumb
 func Open(filePath string) error {
-	if strings.HasSuffix(strings.ToLower(filePath), ".gpg") {
-		if _, err := exec.LookPath("CryptGet"); err != nil {
-			fmt.Fprintf(os.Stderr, "CryptGet is not installed.\ngit clone https://github.com/lneely/acme-crypt\n")
-			return fmt.Errorf("CryptGet not available")
-		}
-		cmd := exec.Command("CryptGet", filePath)
-		return cmd.Run()
-	} else {
-		cmd := exec.Command("plumb", filePath)
-		return cmd.Run()
-	}
+	cmd := exec.Command("plumb", filePath)
+	return cmd.Run()
 }
 
 // IdentifierToPath converts a denote identifier to a file path
