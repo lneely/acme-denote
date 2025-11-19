@@ -6,7 +6,7 @@ This document describes how to integrate the Denote command with the Plan 9 plum
 
 The plumbing rules allow you to right-click on `denote:<identifier>` text in acme and have it automatically open the corresponding note.
 
-## Setup
+## Denote Rule
 
 Add these rules to your `$HOME/lib/plumbing` file:
 
@@ -21,17 +21,17 @@ plumb to denote
 plumb start Denote $1
 ```
 
-### Rule Placement
+## Encryption support
 
-- The port declaration (`plumb to denote`) should go with other port declarations near the top
-- The pattern matching rule should be placed **before** generic file matching rules to ensure it fires first
+```
+plumb to cryptget
 
-## Reload Rules
-
-After editing `$HOME/lib/plumbing`, reload the rules:
-
-```rc
-cat $HOME/lib/plumbing | 9p write plumb/rules
+# open encrypted files with CryptGet
+# https://github.com/lneely/acme-crypt
+type is text
+data matches '(.+)\.(gpg|GPG|pgp|PGP|asc|ASC)'
+plumb to cryptget
+plumb start CryptGet $0
 ```
 
 ## Usage
@@ -42,23 +42,8 @@ Once configured, you can right-click (button 3) on any text matching the pattern
 denote:20251103T165653
 ```
 
-This will execute `Denote open 20251103T165653` and open the note in acme.
+Or simply right click an identifier in the `Denote` window. You may use the `denote:` pattern to cross-link notes.
 
-## Pattern Details
+If you set up the plumbing rule for `CryptGet`, this will also enable support for opening encrypted notes (e.g., if the underlying file is a `.md.gpg` file). To maintain encryption, remember to use `CryptPut` instead of `Put` to save the file.
 
-The regex pattern `denote:([0-9]+T[0-9]+)` matches:
-- The literal text `denote:`
-- One or more digits
-- The letter `T`
-- One or more digits
 
-This matches the standard Denote identifier format: `YYYYMMddTHHmmss`
-
-## Troubleshooting
-
-If right-clicking doesn't work:
-
-1. Verify rules are loaded: `9p read plumb/rules | grep denote`
-2. Check the command exists: `which Denote`
-3. Test manually: `plumb "denote:20251103T165653"`
-4. Ensure the pattern uses `+` not `{n}` quantifiers (Plan 9 regex limitation)
