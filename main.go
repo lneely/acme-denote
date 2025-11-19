@@ -413,24 +413,37 @@ func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
 }
 
 var identifierPattern = regexp.MustCompile(`^\d{8}T\d{6}$`)
-var filenameIdentifierPattern = regexp.MustCompile(`^(\d{8}T\d{6})--`)
 
 func isIdentifier(s string) bool {
 	return identifierPattern.MatchString(s)
-}
-
-func extractIdentifierFromFilename(filename string) string {
-	matches := filenameIdentifierPattern.FindStringSubmatch(filename)
-	if len(matches) < 2 {
-		return ""
-	}
-	return matches[1]
 }
 
 func watchNoteWindow(win *acme.Win, path string) {
 	defer win.CloseFiles()
 
 	for e := range win.EventChan() {
-		win.WriteEvent(e)
+		switch e.C2 {
+		case 'x', 'X':
+			// get metadata and emit 'n' event on CryptPut
+			if string(e.Text) == "CryptPut" {
+				win.WriteEvent(e)
+
+				encryptedPath := path + ".gpg"
+				meta := fs.ExtractMetadata(encryptedPath)
+
+				var newInput string
+				if len(meta.Tags) > 0 {
+					newInput = fmt.Sprintf("'%s' %s", meta.Title, strings.Join(meta.Tags, ","))
+				} else {
+					newInput = fmt.Sprintf("'%s'", meta.Title)
+				}
+
+				fs.With9P(func(f *client.Fsys) error {
+					return fs.WriteFile(f, "new", newInput)
+				})
+			} else {
+				win.WriteEvent(e)
+			}
+		}
 	}
 }
