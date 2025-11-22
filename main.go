@@ -4,7 +4,6 @@ import (
 	"denote/internal/fs"
 	"denote/internal/sync"
 	"denote/internal/tmpl"
-	"denote/internal/ui"
 	"fmt"
 	"io"
 	"log"
@@ -359,7 +358,7 @@ func handleDeleteEvent(identifier string) error {
 
 func main() {
 	var err error
-	var w *ui.Window
+	var w *acme.Win
 	args := os.Args[1:]
 	if len(args) == 1 {
 		if identifier, ok := strings.CutPrefix(args[0], "denote:"); ok {
@@ -394,13 +393,20 @@ func main() {
 	go sync.WatchAcmeLog()
 
 	// open window
-	if w, err = ui.WindowOpen(wname); err != nil {
-		log.Fatal(err)
+	if w = acme.Show(wname); w == nil {
+		if w, err = acme.New(); err != nil {
+			log.Fatal(err)
+		}
+		if err = w.Name(wname); err != nil {
+			w.Del(true)
+			log.Fatal(fmt.Errorf("failed to set window name: %w", err))
+		}
 	}
 	defer w.CloseFiles()
 
-	if err = ui.TagSet(w, "New Put Remove Reset Sync"); err != nil {
-		log.Fatal(err)
+	if _, err = w.Write("tag", []byte("New Put Remove Reset Sync")); err != nil {
+		w.Del(true)
+		log.Fatal(fmt.Errorf("failed to set tag: %w", err))
 	}
 
 	// get initial results (clear any filter, read index)
@@ -452,8 +458,10 @@ func main() {
 		}
 	}()
 
-	ui.WindowDirty(w, false)
-	ui.DotToAddr(w, "#0")
+	w.Ctl("clean")
+	w.Addr("#0")
+	w.Ctl("dot=addr")
+	w.Ctl("show")
 
 	// event loop
 	for e := range w.EventChan() {
@@ -503,21 +511,35 @@ func main() {
 				fullPath, content := generateNotePath(denoteDir, title, tags, "md-yaml")
 
 				// Create new Acme window
-				newWin, err := ui.WindowOpen(fullPath)
-				if err != nil {
-					log.Printf("New: failed to create window: %v", err)
-					break
+				var newWin *acme.Win
+				if newWin = acme.Show(fullPath); newWin == nil {
+					if newWin, err = acme.New(); err != nil {
+						log.Printf("New: failed to create window: %v", err)
+						break
+					}
+					if err = newWin.Name(fullPath); err != nil {
+						newWin.Del(true)
+						log.Printf("New: failed to set window name: %v", err)
+						break
+					}
 				}
 
 				// Write content to window
-				if err := ui.BodyWrite(newWin, "0", []byte(content)); err != nil {
+				if err := newWin.Addr("0"); err != nil {
+					log.Printf("New: failed to seek: %v", err)
+					newWin.Del(true)
+					break
+				}
+				if _, err := newWin.Write("data", []byte(content)); err != nil {
 					log.Printf("New: failed to write content: %v", err)
 					newWin.Del(true)
 					break
 				}
 
-				ui.WindowDirty(newWin, true)
-				ui.DotToAddr(newWin, "$")
+				newWin.Ctl("dirty")
+				newWin.Addr("$")
+				newWin.Ctl("dot=addr")
+				newWin.Ctl("show")
 
 				// Start event listener for this note window
 				go watchNoteWindow(newWin, fullPath)
@@ -597,7 +619,7 @@ func main() {
 	}
 }
 
-func performSearch(w *ui.Window, searchText string) {
+func performSearch(w *acme.Win, searchText string) {
 	args := parseArgs(searchText)
 
 	var filterArgs []string
@@ -650,12 +672,15 @@ func performSearch(w *ui.Window, searchText string) {
 	refreshWindow(w, rs)
 }
 
-func refreshWindow(w *ui.Window, rs fs.Results) {
-	ui.BodyWrite(w, ",", rs.Bytes())
-	ui.DotToAddr(w, "#0")
+func refreshWindow(w *acme.Win, rs fs.Results) {
+	w.Addr(",")
+	w.Write("data", rs.Bytes())
+	w.Addr("#0")
+	w.Ctl("dot=addr")
+	w.Ctl("show")
 }
 
-func refreshWindowWithDefaults(w *ui.Window) {
+func refreshWindowWithDefaults(w *acme.Win) {
 	// Clear filter and read index
 	if err := setFilter(""); err != nil {
 		log.Printf("error clearing filter: %v", err)
