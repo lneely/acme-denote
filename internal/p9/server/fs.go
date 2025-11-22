@@ -11,9 +11,8 @@ follows:
 		n/					(directory)  Notes directory
 			<identifier>/   (directory)  Unique denote file identifier
 				ctl			(write-only) Control file (publish rename, update, and delete events)
-				extension	(read-only)  Underlying file extension (e.g., org, md, txt)
 				keywords	(read-write) File tags
-				path		(read-only)  Path on underlying filesystem
+				path		(read-write) Path on underlying filesystem
 				title		(read-write) Denote document title
 
 Notes:
@@ -72,11 +71,10 @@ const (
 	fileTypePath = iota
 	fileTypeTitle
 	fileTypeKeywords
-	fileTypeExtension
 	fileTypeCtl
 )
 
-var fileNames = []string{"path", "title", "keywords", "extension", "ctl"}
+var fileNames = []string{"path", "title", "keywords", "ctl"}
 
 type server struct {
 	dir           string
@@ -605,7 +603,6 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			Identifier: identifier,
 			Title:      title,
 			Tags:       tags,
-			Extension:  ".md",
 			Path:       "", // Will be set when file is created
 		}
 
@@ -952,8 +949,6 @@ func (s *server) getFileContent(path string) string {
 		return note.Title
 	case "keywords":
 		return strings.Join(note.Tags, ",")
-	case "extension":
-		return note.Extension
 	}
 	return ""
 }

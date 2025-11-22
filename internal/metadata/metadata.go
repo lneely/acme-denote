@@ -16,7 +16,6 @@ type Metadata struct {
 	Identifier string
 	Title      string
 	Tags       []string
-	Extension  string
 }
 
 type Results []*Metadata
@@ -163,13 +162,12 @@ func ExtractMetadata(path string) *Metadata {
 	if m := regexp.MustCompile(`__(.+?)(?:\.|$)`).FindStringSubmatch(fname); m != nil {
 		note.Tags = strings.Split(m[1], "_")
 	}
-	note.Extension = filepath.Ext(fname)
 
 	return note
 }
 
 func extractTitle(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(filepath.Ext(strings.TrimSuffix(path, ".gpg")))
 	if ext != ".org" && ext != ".md" && ext != ".txt" {
 		return ""
 	}

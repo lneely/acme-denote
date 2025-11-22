@@ -93,14 +93,13 @@ func ReadIndex() (metadata.Results, error) {
 			return err
 		}
 
-		// Populate Path and Extension for each note
+		// Populate Path for each note
 		for _, note := range results {
-			fields, err := ReadFields(f, note.Identifier, "path", "extension")
+			fields, err := ReadFields(f, note.Identifier, "path")
 			if err != nil {
 				return fmt.Errorf("failed to read fields for %s: %w", note.Identifier, err)
 			}
 			note.Path = fields["path"]
-			note.Extension = fields["extension"]
 		}
 
 		return nil
