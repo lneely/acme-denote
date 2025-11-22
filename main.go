@@ -1,17 +1,19 @@
 package main
 
 import (
-	"denote/internal/denote"
 	"denote/internal/fs"
 	"denote/internal/sync"
+	"denote/internal/tmpl"
 	"denote/internal/ui"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"9fans.net/go/acme"
@@ -21,7 +23,339 @@ import (
 
 const (
 	wname = "/Denote/"
+	ftype = "md-yaml"
 )
+
+var denoteDir = os.Getenv("HOME") + "/doc"
+
+// Helper functions for denote filename generation
+
+func generateIdentifier() string {
+	return time.Now().Format("20060102T150405")
+}
+
+func slugifyTitle(title string) string {
+	slug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	return regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(slug, "")
+}
+
+func formatKeywords(keywords []string) string {
+	if len(keywords) == 0 {
+		return ""
+	}
+	return "__" + strings.Join(keywords, "_")
+}
+
+func buildDenoteFilename(identifier, title string, keywords []string, ext string) string {
+	titleSlug := slugifyTitle(title)
+	keywordsPart := formatKeywords(keywords)
+	return fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+}
+
+func generateNotePath(dir, title string, keywords []string, fileType string) (string, string) {
+	identifier := generateIdentifier()
+	ext := tmpl.FileExtensions[fileType]
+	filename := buildDenoteFilename(identifier, title, keywords, ext)
+	path := filepath.Join(dir, filename)
+	content := tmpl.Generate(title, keywords, fileType, identifier)
+	return path, content
+}
+
+func renameNote(oldPath, title string, keywords []string, identifier string) (string, error) {
+	if identifier == "" {
+		identifier = generateIdentifier()
+	}
+
+	ext := filepath.Ext(oldPath)
+	dir := filepath.Dir(oldPath)
+	filename := buildDenoteFilename(identifier, title, keywords, ext)
+	newPath := filepath.Join(dir, filename)
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return "", err
+	}
+
+	return newPath, nil
+}
+
+// 9P client helpers
+
+func read9PFile(f *client.Fsys, path string) (string, error) {
+	fid, err := f.Open(path, plan9.OREAD)
+	if err != nil {
+		return "", err
+	}
+	defer fid.Close()
+
+	var content []byte
+	buf := make([]byte, 8192)
+	for {
+		n, err := fid.Read(buf)
+		if err != nil && err != io.EOF {
+			return "", err
+		}
+		if n == 0 {
+			break
+		}
+		content = append(content, buf[:n]...)
+	}
+	return strings.TrimSpace(string(content)), nil
+}
+
+func read9PFields(f *client.Fsys, identifier string, fields ...string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, field := range fields {
+		val, err := read9PFile(f, "n/"+identifier+"/"+field)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", field, err)
+		}
+		result[field] = val
+	}
+	return result, nil
+}
+
+func readIndex() (fs.Results, error) {
+	var results fs.Results
+
+	err := fs.With9P(func(f *client.Fsys) error {
+		indexContent, err := read9PFile(f, "index")
+		if err != nil {
+			return fmt.Errorf("failed to read index: %w", err)
+		}
+
+		results, err = results.FromString(indexContent)
+		if err != nil {
+			return err
+		}
+
+		// Populate Path and Extension for each note
+		for _, note := range results {
+			fields, err := read9PFields(f, note.Identifier, "path", "extension")
+			if err != nil {
+				return fmt.Errorf("failed to read fields for %s: %w", note.Identifier, err)
+			}
+			note.Path = fields["path"]
+			note.Extension = fields["extension"]
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+func setFilter(filterQuery string) error {
+	return fs.With9P(func(f *client.Fsys) error {
+		var cmd string
+		if filterQuery == "" {
+			cmd = "filter"
+		} else {
+			cmd = "filter " + filterQuery
+		}
+		return fs.WriteFile(f, "ctl", cmd)
+	})
+}
+
+func identifierToPath(identifier string) (string, error) {
+	if err := setFilter(fmt.Sprintf("date:%s", identifier)); err != nil {
+		return "", fmt.Errorf("failed to set filter: %w", err)
+	}
+	defer setFilter("")
+
+	notes, err := readIndex()
+	if err != nil {
+		return "", fmt.Errorf("failed to read index: %w", err)
+	}
+
+	if len(notes) == 0 {
+		return "", fmt.Errorf("no note found with identifier %s", identifier)
+	}
+
+	return notes[0].Path, nil
+}
+
+// Event handling
+
+func eventListener() {
+	for {
+		err := fs.With9P(func(f *client.Fsys) error {
+			fid, err := f.Open("event", plan9.OREAD)
+			if err != nil {
+				return fmt.Errorf("failed to open event file: %w", err)
+			}
+			defer fid.Close()
+
+			buf := make([]byte, 8192)
+			for {
+				n, err := fid.Read(buf)
+				if err != nil {
+					return fmt.Errorf("failed to read event: %w", err)
+				}
+				if n == 0 {
+					continue
+				}
+
+				event := strings.TrimSpace(string(buf[:n]))
+				parts := strings.Fields(event)
+				if len(parts) != 2 {
+					log.Printf("invalid event format: %s", event)
+					continue
+				}
+
+				identifier := parts[0]
+				action := parts[1]
+
+				switch action {
+				case "u":
+					if err := handleUpdateEvent(f, identifier); err != nil {
+						log.Printf("error handling update for %s: %v", identifier, err)
+					}
+				case "r":
+					if err := handleRenameEvent(f, identifier); err != nil {
+						log.Printf("error handling rename for %s: %v", identifier, err)
+					}
+				case "n":
+					if err := handleNewEvent(identifier); err != nil {
+						log.Printf("error handling new for %s: %v", identifier, err)
+					}
+				case "d":
+					if err := handleDeleteEvent(identifier); err != nil {
+						log.Printf("error handling delete for %s: %v", identifier, err)
+					}
+				}
+			}
+		})
+
+		if err != nil {
+			log.Printf("event consumer error: %v", err)
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+func handleUpdateEvent(f *client.Fsys, identifier string) error {
+	fields, err := read9PFields(f, identifier, "title", "keywords", "path", "extension")
+	if err != nil {
+		return err
+	}
+
+	title := fields["title"]
+	keywords := fields["keywords"]
+	path := fields["path"]
+	ext := fields["extension"]
+
+	var tags []string
+	if keywords != "" {
+		for _, tag := range strings.Split(keywords, ",") {
+			tags = append(tags, strings.TrimSpace(tag))
+		}
+	}
+
+	isDenoteFile := ext == ".org" || ext == ".md" || ext == ".txt"
+
+	if isDenoteFile {
+		var fileType string
+		switch ext {
+		case ".org":
+			fileType = "org"
+		case ".md":
+			fileType = "md-yaml"
+		case ".txt":
+			fileType = "txt"
+		}
+
+		fm := &tmpl.FrontMatter{
+			Title:      title,
+			Tags:       tags,
+			Identifier: identifier,
+			FileType:   fileType,
+		}
+
+		if err := tmpl.Update(path, fm); err != nil {
+			log.Printf("failed to update front matter for %s: %v", identifier, err)
+		}
+	}
+
+	return nil
+}
+
+func handleRenameEvent(f *client.Fsys, identifier string) error {
+	fields, err := read9PFields(f, identifier, "title", "keywords", "path")
+	if err != nil {
+		return err
+	}
+
+	title := fields["title"]
+	keywords := fields["keywords"]
+	path := fields["path"]
+
+	var tags []string
+	if keywords != "" {
+		for _, tag := range strings.Split(keywords, ",") {
+			tags = append(tags, strings.TrimSpace(tag))
+		}
+	}
+
+	newPath, err := renameNote(path, title, tags, identifier)
+	if err != nil {
+		return fmt.Errorf("failed to rename file: %w", err)
+	}
+
+	if newPath != path {
+		if err := fs.UpdateNotePath(identifier, newPath); err != nil {
+			return fmt.Errorf("failed to update path: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func handleNewEvent(identifier string) error {
+	metadata, err := fs.GetNote(identifier)
+	if err != nil {
+		return fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	path, content := generateNotePath(denoteDir, metadata.Title, metadata.Tags, "md-yaml")
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to create note file: %w", err)
+	}
+
+	if err := fs.UpdateNotePath(identifier, path); err != nil {
+		return fmt.Errorf("failed to update path in metadata: %w", err)
+	}
+
+	log.Printf("created new note: %s at %s", identifier, path)
+	return nil
+}
+
+func handleDeleteEvent(identifier string) error {
+	pattern := filepath.Join(denoteDir, identifier+"--*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to find file: %w", err)
+	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("no file found matching identifier: %s", identifier)
+	}
+
+	if len(matches) > 1 {
+		log.Printf("warning: multiple files match identifier %s, deleting first: %s", identifier, matches[0])
+	}
+
+	if err := os.Remove(matches[0]); err != nil {
+		return fmt.Errorf("failed to delete file: %w", err)
+	}
+
+	log.Printf("deleted note: %s", matches[0])
+	return nil
+}
 
 func main() {
 	var err error
@@ -29,13 +363,15 @@ func main() {
 	args := os.Args[1:]
 	if len(args) == 1 {
 		if identifier, ok := strings.CutPrefix(args[0], "denote:"); ok {
-			path, err := denote.IdentifierToPath(identifier)
+			path, err := identifierToPath(identifier)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error finding note: %v\n", err)
 				os.Exit(1)
 			}
 			fmt.Println(path)
-			denote.Open(path)
+			if err := exec.Command("plumb", path).Run(); err != nil {
+				log.Printf("failed to plumb identifier: %v", err)
+			}
 			return
 		} else {
 			fmt.Println("Usage:")
@@ -52,7 +388,7 @@ func main() {
 	}
 
 	// start event consumer
-	go denote.EventListener()
+	go eventListener()
 
 	// start acme log watcher
 	go sync.WatchAcmeLog()
@@ -67,8 +403,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// get initial results
-	rs, err := denote.Search(fs.Filters{})
+	// get initial results (clear any filter, read index)
+	if err := setFilter(""); err != nil {
+		panic(err)
+	}
+	rs, err := readIndex()
 	if err != nil {
 		panic(err)
 	}
@@ -160,8 +499,8 @@ func main() {
 					tags = strings.Split(remainder, ",")
 				}
 
-				// Generate filename and content using denote package
-				fullPath, content := denote.GenerateNoteContent(denote.GetDir(), title, tags, "md-yaml", "")
+				// Generate filename and content
+				fullPath, content := generateNotePath(denoteDir, title, tags, "md-yaml")
 
 				// Create new Acme window
 				newWin, err := ui.WindowOpen(fullPath)
@@ -221,7 +560,12 @@ func main() {
 				}
 
 				// Get current results and apply changes
-				current, err := denote.Search(fs.Filters{})
+				// Read unfiltered index
+				if err := setFilter(""); err != nil {
+					log.Printf("failed to clear filter: %v", err)
+					break
+				}
+				current, err := readIndex()
 				if err != nil {
 					log.Printf("failed to get current results: %v", err)
 					break
@@ -241,8 +585,7 @@ func main() {
 			text := string(e.Text)
 			if isIdentifier(text) {
 				// Plumb with denote: prefix
-				cmd := fmt.Sprintf("plumb 'denote:%s'", text)
-				if err := exec.Command("rc", "-c", cmd).Run(); err != nil {
+				if err := exec.Command("plumb", fmt.Sprintf("denote:%s", text)).Run(); err != nil {
 					log.Printf("failed to plumb identifier: %v", err)
 				}
 			} else {
@@ -287,13 +630,17 @@ func performSearch(w *ui.Window, searchText string) {
 		}
 	}
 
-	filters, err := fs.Filters{}.Parse(filterArgs)
-	if err != nil {
-		log.Printf("filter parse error: %v", err)
+	// Build filter query string for ctl
+	filterQuery := strings.Join(filterArgs, " ")
+
+	// Set filter on server
+	if err := setFilter(filterQuery); err != nil {
+		log.Printf("failed to set filter: %v", err)
 		return
 	}
 
-	rs, err := denote.Search(filters)
+	// Read filtered index
+	rs, err := readIndex()
 	if err != nil {
 		log.Printf("search error: %v", err)
 		return
@@ -309,7 +656,12 @@ func refreshWindow(w *ui.Window, rs fs.Results) {
 }
 
 func refreshWindowWithDefaults(w *ui.Window) {
-	rs, err := denote.Search(fs.Filters{})
+	// Clear filter and read index
+	if err := setFilter(""); err != nil {
+		log.Printf("error clearing filter: %v", err)
+		return
+	}
+	rs, err := readIndex()
 	if err != nil {
 		log.Printf("error refreshing: %v", err)
 		return

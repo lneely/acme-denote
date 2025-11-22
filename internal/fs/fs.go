@@ -4,8 +4,9 @@ denote metadata for all files in the denote directory. The filesystem is organiz
 follows:
 
 	denote/                 (directory)  Root filesystem
+		ctl					(write-only) Control file (commands: filter <query>)
 		event				(read-only)  Global event bus (listen & react to rename, update, and delete events)
-		index				(read-only)  Metadata index, supports search functionality
+		index				(read-only)  Metadata index (respects active filter)
 		new					(write-only) Create new note (write "'title' tag1,tag2")
 		n/					(directory)  Notes directory
 			<identifier>/   (directory)  Unique denote file identifier
@@ -16,7 +17,13 @@ follows:
 				title		(read-write) Denote document title
 
 Notes:
-- Messages written to the ctl file may generate events that are broadcast over the global event bus.
+- Messages written to denote/ctl affect global state (e.g., filtering)
+- Filter command syntax: filter [field:]pattern where field is date|title|tag
+- Multiple filters can be specified: filter tag:journal !tag:draft
+- Titles with spaces must be quoted: filter title:"My Title"
+- Writing 'filter' with no arguments clears the active filter
+- Index respects the current filter - returns only matching notes
+- Messages written to denote/n/<identifier>/ctl may generate events that are broadcast over the global event bus
 - Writing to title or keywords triggers an update ('u') event and a rename ('r') event
 - Write 'd' to denote/n/<identifier>/ctl to delete a denote file
 - Write "'document title' tag1,tag2,(...)" to denote/new to create a new denote file
@@ -170,7 +177,21 @@ func NewFilter(arg string) (*Filter, error) {
 		return nil, fmt.Errorf("invalid filter syntax: %s", arg)
 	}
 
-	pattern := m[2]
+	fieldStr := m[1]
+	value := m[2]
+
+	// Strip surrounding quotes (both single and double)
+	value = strings.Trim(value, `"'`)
+
+	// Validate: if field is title and value has spaces, original should have been quoted
+	if fieldStr == "title" && strings.Contains(value, " ") {
+		// Check if original value was quoted
+		if !strings.HasPrefix(m[2], `"`) && !strings.HasPrefix(m[2], `'`) {
+			return nil, fmt.Errorf("title with spaces must be quoted: %s", arg)
+		}
+	}
+
+	pattern := value
 	if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/") {
 		pattern = strings.TrimPrefix(strings.TrimSuffix(pattern, "/"), "/")
 	} else {
@@ -182,7 +203,7 @@ func NewFilter(arg string) (*Filter, error) {
 		return nil, fmt.Errorf("invalid regex: %v", err)
 	}
 
-	return &Filter{field: FilterField(m[1]), re: re, negate: negate}, nil
+	return &Filter{field: FilterField(fieldStr), re: re, negate: negate}, nil
 }
 
 // IsMatch checks if a note matches this filter
@@ -275,6 +296,7 @@ const (
 	qidEvent    = 999998
 	qidNew      = 999997
 	qidNDir     = 999996
+	qidCtl      = 999995
 )
 
 // File types within a note directory
@@ -289,14 +311,16 @@ const (
 var fileNames = []string{"path", "title", "keywords", "extension", "ctl"}
 
 type server struct {
-	dir         string
-	notes       Results
-	mu          sync.RWMutex
-	eventChan   chan string
-	eventSubs   map[uint64]chan string
-	eventMu     sync.RWMutex
-	nextSubID   uint64
-	nextSubIDMu sync.Mutex
+	dir           string
+	notes         Results
+	mu            sync.RWMutex
+	eventChan     chan string
+	eventSubs     map[uint64]chan string
+	eventMu       sync.RWMutex
+	nextSubID     uint64
+	nextSubIDMu   sync.Mutex
+	filterQuery   string
+	filteredNotes []*Metadata
 }
 
 type connState struct {
@@ -715,6 +739,14 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/new"
 				found = true
+			} else if "ctl" == name {
+				qid := plan9.Qid{
+					Type: QTFile,
+					Path: uint64(qidCtl),
+				}
+				qids = append(qids, qid)
+				path = "/ctl"
+				found = true
 			} else if "n" == name {
 				qid := plan9.Qid{
 					Type: QTDir,
@@ -890,6 +922,11 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	// Check if opened for writing
 	if f.mode&plan9.OWRITE == 0 && f.mode&plan9.ORDWR == 0 {
 		return errorFcall(fc, "file not open for writing")
+	}
+
+	// Handle writes to /ctl
+	if f.path == "/ctl" {
+		return s.handleCtlCommand(fc)
 	}
 
 	// Handle writes to /new
@@ -1102,6 +1139,19 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			Muid:   "denote",
 			Length: 0,
 		})
+		// add ctl node
+		dirs = append(dirs, plan9.Dir{
+			Qid: plan9.Qid{
+				Type: QTFile,
+				Path: uint64(qidCtl),
+			},
+			Mode:   0200,
+			Name:   "ctl",
+			Uid:    "denote",
+			Gid:    "denote",
+			Muid:   "denote",
+			Length: 0,
+		})
 		// add n directory
 		dirs = append(dirs, plan9.Dir{
 			Qid: plan9.Qid{
@@ -1226,7 +1276,17 @@ func (s *server) pathToNoteIndex(path string) int {
 }
 
 func (s *server) getIndexContent() string {
-	return string(s.notes.Bytes())
+	if s.filterQuery == "" {
+		// No filter: return all notes
+		return string(s.notes.Bytes())
+	}
+
+	// Return filtered notes
+	var filtered Results
+	for _, note := range s.filteredNotes {
+		filtered = append(filtered, note)
+	}
+	return string(filtered.Bytes())
 }
 
 func (s *server) getFileContent(path string) string {
@@ -1266,4 +1326,147 @@ func errorFcall(fc *plan9.Fcall, msg string) *plan9.Fcall {
 		Tag:   fc.Tag,
 		Ename: msg,
 	}
+}
+
+// handleCtlCommand processes commands written to /ctl
+func (s *server) handleCtlCommand(fc *plan9.Fcall) *plan9.Fcall {
+	command := strings.TrimSpace(string(fc.Data))
+
+	// Parse command - must start with a known command word
+	if strings.HasPrefix(command, "filter") {
+		return s.handleFilterCommand(fc, command)
+	}
+
+	return errorFcall(fc, fmt.Sprintf("unknown ctl command: %s", command))
+}
+
+// handleFilterCommand processes the 'filter' ctl command
+func (s *server) handleFilterCommand(fc *plan9.Fcall, command string) *plan9.Fcall {
+	// Extract filter query after "filter" keyword
+	query := strings.TrimSpace(strings.TrimPrefix(command, "filter"))
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if query == "" {
+		// Clear filter: filter with no arguments
+		s.filterQuery = ""
+		s.filteredNotes = nil
+
+		return &plan9.Fcall{
+			Type:  plan9.Rwrite,
+			Tag:   fc.Tag,
+			Count: uint32(len(fc.Data)),
+		}
+	}
+
+	// Parse filter query into Filter objects
+	filters, err := parseFilterQuery(query)
+	if err != nil {
+		return errorFcall(fc, fmt.Sprintf("invalid filter: %v", err))
+	}
+
+	// Apply filters to notes
+	var filtered []*Metadata
+	for _, note := range s.notes {
+		match := true
+		for _, filt := range filters {
+			if !filt.IsMatch(note) {
+				match = false
+				break
+			}
+		}
+		if match {
+			filtered = append(filtered, note)
+		}
+	}
+
+	// Store filter state
+	s.filterQuery = query
+	s.filteredNotes = filtered
+
+	return &plan9.Fcall{
+		Type:  plan9.Rwrite,
+		Tag:   fc.Tag,
+		Count: uint32(len(fc.Data)),
+	}
+}
+
+// parseFilterQuery parses a filter command query into Filter objects
+// Handles quoted strings for titles: title:"my title" or title:'my title'
+// Multiple filters space-separated: tag:journal !tag:draft
+func parseFilterQuery(query string) ([]*Filter, error) {
+	var filters []*Filter
+
+	// Split by spaces while respecting quotes
+	parts := splitRespectingQuotes(query)
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		// Use existing NewFilter function
+		filt, err := NewFilter(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid filter '%s': %w", part, err)
+		}
+		filters = append(filters, filt)
+	}
+
+	if len(filters) == 0 {
+		return nil, fmt.Errorf("no valid filters provided")
+	}
+
+	return filters, nil
+}
+
+// splitRespectingQuotes splits a string on spaces but preserves quoted strings
+// Handles both single and double quotes
+func splitRespectingQuotes(s string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	quoteChar := byte(0)
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+
+		switch ch {
+		case '"', '\'':
+			if !inQuote {
+				// Start quote
+				inQuote = true
+				quoteChar = ch
+				current.WriteByte(ch)
+			} else if ch == quoteChar {
+				// End quote (matching)
+				inQuote = false
+				quoteChar = 0
+				current.WriteByte(ch)
+			} else {
+				// Different quote char inside quotes
+				current.WriteByte(ch)
+			}
+		case ' ':
+			if inQuote {
+				current.WriteByte(ch)
+			} else {
+				if current.Len() > 0 {
+					result = append(result, current.String())
+					current.Reset()
+				}
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+
+	// Add final token
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+
+	return result
 }

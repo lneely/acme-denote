@@ -7,10 +7,11 @@ the file name.
 package sync
 
 import (
-	"denote/internal/denote"
 	"denote/internal/fs"
+	"denote/internal/tmpl"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -76,7 +77,7 @@ func WatchAcmeLog() {
 
 // isDenoteFile checks if the file is in the denote directory
 func isDenoteFile(path string) bool {
-	denoteDir := denote.GetDir()
+	denoteDir := os.Getenv("HOME") + "/doc"
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false
@@ -128,7 +129,7 @@ func registerNewNote(path string) error {
 // syncFrontMatter reads the file's front matter and writes it to 9P metadata
 func syncFrontMatter(path, identifier string) error {
 	// Extract front matter from file
-	fm, err := denote.ExtractFrontMatter(path)
+	fm, err := tmpl.Extract(path)
 	if err != nil {
 		return err
 	}
@@ -240,7 +241,7 @@ func SyncAll() error {
 // syncDenoteFile syncs a text file with front matter
 func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract front matter from file
-	fm, err := denote.ExtractFrontMatter(path)
+	fm, err := tmpl.Extract(path)
 	if err != nil {
 		return err
 	}
