@@ -462,39 +462,6 @@ func loadData(filters []*Filter) (Results, error) {
 	return notes, nil
 }
 
-func With9P(fn func(*client.Fsys) error) error {
-	ns := client.Namespace()
-	if ns == "" {
-		return fmt.Errorf("failed to get namespace")
-	}
-
-	conn, err := client.DialService("denote")
-	if err != nil {
-		return fmt.Errorf("failed to connect to denote service: %w", err)
-	}
-	defer conn.Close()
-
-	root, err := conn.Attach(nil, "denote", "")
-	if err != nil {
-		return fmt.Errorf("failed to attach: %w", err)
-	}
-	defer root.Close()
-
-	return fn(root)
-}
-
-// WriteFile writes data to a 9P file
-func WriteFile(f *client.Fsys, path string, data string) error {
-	fid, err := f.Open(path, plan9.OWRITE)
-	if err != nil {
-		return err
-	}
-	defer fid.Close()
-
-	_, err = fid.Write([]byte(data))
-	return err
-}
-
 func AddNote(note *Metadata) error {
 	if srv == nil {
 		return fmt.Errorf("server not running")

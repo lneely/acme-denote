@@ -7,7 +7,8 @@ the file name.
 package sync
 
 import (
-	"denote/internal/fs"
+	p9client "denote/internal/p9/client"
+	p9server "denote/internal/p9/server"
 	"denote/internal/tmpl"
 	"fmt"
 	"log"
@@ -97,7 +98,7 @@ func extractIdentifier(path string) string {
 
 // noteExists checks if a note exists in 9P
 func noteExists(identifier string) bool {
-	err := fs.With9P(func(f *client.Fsys) error {
+	err := p9client.With9P(func(f *client.Fsys) error {
 		titlePath := "n/" + identifier + "/title"
 		fid, err := f.Open(titlePath, 0)
 		if err != nil {
@@ -111,7 +112,7 @@ func noteExists(identifier string) bool {
 
 // registerNewNote writes to /new to register a new note (triggers 'n' event)
 func registerNewNote(path string) error {
-	meta := fs.ExtractMetadata(path)
+	meta := p9server.ExtractMetadata(path)
 
 	// Format as 'title' tag1,tag2
 	var newInput string
@@ -121,8 +122,8 @@ func registerNewNote(path string) error {
 		newInput = fmt.Sprintf("'%s'", meta.Title)
 	}
 
-	return fs.With9P(func(f *client.Fsys) error {
-		return fs.WriteFile(f, "new", newInput)
+	return p9client.With9P(func(f *client.Fsys) error {
+		return p9client.WriteFile(f, "new", newInput)
 	})
 }
 
@@ -135,23 +136,23 @@ func syncFrontMatter(path, identifier string) error {
 	}
 
 	// Write to 9P filesystem
-	return fs.With9P(func(f *client.Fsys) error {
+	return p9client.With9P(func(f *client.Fsys) error {
 		// Write title (triggers 'u' event)
 		titlePath := "n/" + identifier + "/title"
-		if err := fs.WriteFile(f, titlePath, fm.Title); err != nil {
+		if err := p9client.WriteFile(f, titlePath, fm.Title); err != nil {
 			return err
 		}
 
 		// Write keywords (triggers 'u' event)
 		keywords := strings.Join(fm.Tags, ",")
 		keywordsPath := "n/" + identifier + "/keywords"
-		if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
+		if err := p9client.WriteFile(f, keywordsPath, keywords); err != nil {
 			return err
 		}
 
 		// Trigger rename event
 		ctlPath := "n/" + identifier + "/ctl"
-		if err := fs.WriteFile(f, ctlPath, "r"); err != nil {
+		if err := p9client.WriteFile(f, ctlPath, "r"); err != nil {
 			return err
 		}
 
@@ -161,7 +162,7 @@ func syncFrontMatter(path, identifier string) error {
 
 // SyncAll syncs all notes in the denote directory
 func SyncAll() error {
-	return fs.With9P(func(f *client.Fsys) error {
+	return p9client.With9P(func(f *client.Fsys) error {
 		// Read index to get all identifiers
 		indexFid, err := f.Open("index", 0)
 		if err != nil {
@@ -248,20 +249,20 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 
 	// Write title (triggers 'u' event)
 	titlePath := "n/" + identifier + "/title"
-	if err := fs.WriteFile(f, titlePath, fm.Title); err != nil {
+	if err := p9client.WriteFile(f, titlePath, fm.Title); err != nil {
 		return err
 	}
 
 	// Write keywords (triggers 'u' event)
 	keywords := strings.Join(fm.Tags, ",")
 	keywordsPath := "n/" + identifier + "/keywords"
-	if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
+	if err := p9client.WriteFile(f, keywordsPath, keywords); err != nil {
 		return err
 	}
 
 	// Trigger rename event
 	ctlPath := "n/" + identifier + "/ctl"
-	if err := fs.WriteFile(f, ctlPath, "r"); err != nil {
+	if err := p9client.WriteFile(f, ctlPath, "r"); err != nil {
 		return err
 	}
 
@@ -271,18 +272,18 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 // syncNonDenoteFile syncs a binary file (metadata from filename)
 func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract metadata from filename
-	meta := fs.ExtractMetadata(path)
+	meta := p9server.ExtractMetadata(path)
 
 	// Write title (triggers 'u' event)
 	titlePath := "n/" + identifier + "/title"
-	if err := fs.WriteFile(f, titlePath, meta.Title); err != nil {
+	if err := p9client.WriteFile(f, titlePath, meta.Title); err != nil {
 		return err
 	}
 
 	// Write keywords (triggers 'u' event)
 	keywords := strings.Join(meta.Tags, ",")
 	keywordsPath := "n/" + identifier + "/keywords"
-	if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
+	if err := p9client.WriteFile(f, keywordsPath, keywords); err != nil {
 		return err
 	}
 

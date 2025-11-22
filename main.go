@@ -1,7 +1,8 @@
 package main
 
 import (
-	"denote/internal/fs"
+	p9client "denote/internal/p9/client"
+	p9server "denote/internal/p9/server"
 	"denote/internal/sync"
 	"denote/internal/tmpl"
 	"fmt"
@@ -113,10 +114,10 @@ func read9PFields(f *client.Fsys, identifier string, fields ...string) (map[stri
 	return result, nil
 }
 
-func readIndex() (fs.Results, error) {
-	var results fs.Results
+func readIndex() (p9server.Results, error) {
+	var results p9server.Results
 
-	err := fs.With9P(func(f *client.Fsys) error {
+	err := p9client.With9P(func(f *client.Fsys) error {
 		indexContent, err := read9PFile(f, "index")
 		if err != nil {
 			return fmt.Errorf("failed to read index: %w", err)
@@ -148,14 +149,14 @@ func readIndex() (fs.Results, error) {
 }
 
 func setFilter(filterQuery string) error {
-	return fs.With9P(func(f *client.Fsys) error {
+	return p9client.With9P(func(f *client.Fsys) error {
 		var cmd string
 		if filterQuery == "" {
 			cmd = "filter"
 		} else {
 			cmd = "filter " + filterQuery
 		}
-		return fs.WriteFile(f, "ctl", cmd)
+		return p9client.WriteFile(f, "ctl", cmd)
 	})
 }
 
@@ -181,7 +182,7 @@ func identifierToPath(identifier string) (string, error) {
 
 func eventListener() {
 	for {
-		err := fs.With9P(func(f *client.Fsys) error {
+		err := p9client.With9P(func(f *client.Fsys) error {
 			fid, err := f.Open("event", plan9.OREAD)
 			if err != nil {
 				return fmt.Errorf("failed to open event file: %w", err)
@@ -305,7 +306,7 @@ func handleRenameEvent(f *client.Fsys, identifier string) error {
 	}
 
 	if newPath != path {
-		if err := fs.UpdateNotePath(identifier, newPath); err != nil {
+		if err := p9server.UpdateNotePath(identifier, newPath); err != nil {
 			return fmt.Errorf("failed to update path: %w", err)
 		}
 	}
@@ -314,7 +315,7 @@ func handleRenameEvent(f *client.Fsys, identifier string) error {
 }
 
 func handleNewEvent(identifier string) error {
-	metadata, err := fs.GetNote(identifier)
+	metadata, err := p9server.GetNote(identifier)
 	if err != nil {
 		return fmt.Errorf("failed to get metadata: %w", err)
 	}
@@ -325,7 +326,7 @@ func handleNewEvent(identifier string) error {
 		return fmt.Errorf("failed to create note file: %w", err)
 	}
 
-	if err := fs.UpdateNotePath(identifier, path); err != nil {
+	if err := p9server.UpdateNotePath(identifier, path); err != nil {
 		return fmt.Errorf("failed to update path in metadata: %w", err)
 	}
 
@@ -382,7 +383,7 @@ func main() {
 	}
 
 	// 9p server startup
-	if err := fs.StartServer(); err != nil {
+	if err := p9server.StartServer(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to start fileserver: %v\n", err)
 	}
 
@@ -417,13 +418,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
+	p9server.Sort(rs, p9server.SortById, p9server.SortOrderDesc)
 	refreshWindow(w, rs)
 
 	// listen for 'n' events to refresh window
 	go func() {
 		for {
-			err := fs.With9P(func(f *client.Fsys) error {
+			err := p9client.With9P(func(f *client.Fsys) error {
 				// Open event file (blocking reads)
 				fid, err := f.Open("event", plan9.OREAD)
 				if err != nil {
@@ -552,8 +553,8 @@ func main() {
 				}
 
 				// Write to denote/n/<identifier>/ctl via 9P
-				if err := fs.With9P(func(f *client.Fsys) error {
-					return fs.WriteFile(f, filepath.Join("n", input, "ctl"), "d")
+				if err := p9client.With9P(func(f *client.Fsys) error {
+					return p9client.WriteFile(f, filepath.Join("n", input, "ctl"), "d")
 				}); err != nil {
 					log.Printf("failed to delete file: %v", err)
 				}
@@ -574,7 +575,7 @@ func main() {
 				}
 
 				// Parse the window content
-				var emptyResults fs.Results
+				var emptyResults p9server.Results
 				updated, err := emptyResults.FromString(string(body))
 				if err != nil {
 					log.Printf("failed to parse window: %v", err)
@@ -594,7 +595,7 @@ func main() {
 				}
 
 				// Validate and apply changes via individual file writes
-				if err := fs.With9P(func(f *client.Fsys) error {
+				if err := p9client.With9P(func(f *client.Fsys) error {
 					return applyIndexChanges(f, current, updated)
 				}); err != nil {
 					log.Printf("failed to apply changes: %v", err)
@@ -623,8 +624,8 @@ func performSearch(w *acme.Win, searchText string) {
 	args := parseArgs(searchText)
 
 	var filterArgs []string
-	sortBy := fs.SortById
-	sortOrder := fs.SortOrderDesc
+	sortBy := p9server.SortById
+	sortOrder := p9server.SortOrderDesc
 
 	for _, arg := range args {
 		if sortSpec, ok := strings.CutPrefix(arg, "sort:"); ok {
@@ -632,20 +633,20 @@ func performSearch(w *acme.Win, searchText string) {
 
 			switch parts[0] {
 			case "id", "date":
-				sortBy = fs.SortById
+				sortBy = p9server.SortById
 			case "title":
-				sortBy = fs.SortByTitle
+				sortBy = p9server.SortByTitle
 			}
 
 			if len(parts) > 1 {
 				switch parts[1] {
 				case "asc":
-					sortOrder = fs.SortOrderAsc
+					sortOrder = p9server.SortOrderAsc
 				case "desc":
-					sortOrder = fs.SortOrderDesc
+					sortOrder = p9server.SortOrderDesc
 				}
 			} else {
-				sortOrder = fs.SortOrderAsc
+				sortOrder = p9server.SortOrderAsc
 			}
 		} else {
 			filterArgs = append(filterArgs, arg)
@@ -667,12 +668,12 @@ func performSearch(w *acme.Win, searchText string) {
 		log.Printf("search error: %v", err)
 		return
 	}
-	fs.Sort(rs, sortBy, sortOrder)
+	p9server.Sort(rs, sortBy, sortOrder)
 
 	refreshWindow(w, rs)
 }
 
-func refreshWindow(w *acme.Win, rs fs.Results) {
+func refreshWindow(w *acme.Win, rs p9server.Results) {
 	w.Addr(",")
 	w.Write("data", rs.Bytes())
 	w.Addr("#0")
@@ -691,7 +692,7 @@ func refreshWindowWithDefaults(w *acme.Win) {
 		log.Printf("error refreshing: %v", err)
 		return
 	}
-	fs.Sort(rs, fs.SortById, fs.SortOrderDesc)
+	p9server.Sort(rs, p9server.SortById, p9server.SortOrderDesc)
 	refreshWindow(w, rs)
 }
 
@@ -748,14 +749,14 @@ func parseArgs(s string) []string {
 	return args
 }
 
-func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
+func applyIndexChanges(f *client.Fsys, current, updated p9server.Results) error {
 	// Validate entry count matches
 	if len(updated) != len(current) {
 		return fmt.Errorf("entry count mismatch: got %d, expected %d", len(updated), len(current))
 	}
 
 	// Build map of current state
-	currentMap := make(map[string]*fs.Metadata)
+	currentMap := make(map[string]*p9server.Metadata)
 	for _, m := range current {
 		currentMap[m.Identifier] = m
 	}
@@ -769,18 +770,18 @@ func applyIndexChanges(f *client.Fsys, current, updated fs.Results) error {
 
 		// Check if anything changed
 		titleChanged := orig.Title != upd.Title
-		tagsChanged := !fs.SlicesEqual(orig.Tags, upd.Tags)
+		tagsChanged := !p9server.SlicesEqual(orig.Tags, upd.Tags)
 
 		if titleChanged || tagsChanged {
 			// Write both title and keywords
 			titlePath := "n/" + upd.Identifier + "/title"
-			if err := fs.WriteFile(f, titlePath, upd.Title); err != nil {
+			if err := p9client.WriteFile(f, titlePath, upd.Title); err != nil {
 				return fmt.Errorf("failed to write title for %s: %w", upd.Identifier, err)
 			}
 
 			keywordsPath := "n/" + upd.Identifier + "/keywords"
 			keywords := strings.Join(upd.Tags, ",")
-			if err := fs.WriteFile(f, keywordsPath, keywords); err != nil {
+			if err := p9client.WriteFile(f, keywordsPath, keywords); err != nil {
 				return fmt.Errorf("failed to write keywords for %s: %w", upd.Identifier, err)
 			}
 		}
@@ -806,7 +807,7 @@ func watchNoteWindow(win *acme.Win, path string) {
 				win.WriteEvent(e)
 
 				encryptedPath := path + ".gpg"
-				meta := fs.ExtractMetadata(encryptedPath)
+				meta := p9server.ExtractMetadata(encryptedPath)
 
 				var newInput string
 				if len(meta.Tags) > 0 {
@@ -815,8 +816,8 @@ func watchNoteWindow(win *acme.Win, path string) {
 					newInput = fmt.Sprintf("'%s'", meta.Title)
 				}
 
-				fs.With9P(func(f *client.Fsys) error {
-					return fs.WriteFile(f, "new", newInput)
+				p9client.With9P(func(f *client.Fsys) error {
+					return p9client.WriteFile(f, "new", newInput)
 				})
 			} else {
 				win.WriteEvent(e)
