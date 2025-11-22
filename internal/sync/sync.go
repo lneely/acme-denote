@@ -7,9 +7,8 @@ the file name.
 package sync
 
 import (
+	"denote/internal/metadata"
 	p9client "denote/internal/p9/client"
-	p9server "denote/internal/p9/server"
-	"denote/internal/tmpl"
 	"fmt"
 	"log"
 	"os"
@@ -112,7 +111,7 @@ func noteExists(identifier string) bool {
 
 // registerNewNote writes to /new to register a new note (triggers 'n' event)
 func registerNewNote(path string) error {
-	meta := p9server.ExtractMetadata(path)
+	meta := metadata.ExtractMetadata(path)
 
 	// Format as 'title' tag1,tag2
 	var newInput string
@@ -130,7 +129,7 @@ func registerNewNote(path string) error {
 // syncFrontMatter reads the file's front matter and writes it to 9P metadata
 func syncFrontMatter(path, identifier string) error {
 	// Extract front matter from file
-	fm, err := tmpl.Extract(path)
+	fm, err := metadata.Extract(path)
 	if err != nil {
 		return err
 	}
@@ -242,7 +241,7 @@ func SyncAll() error {
 // syncDenoteFile syncs a text file with front matter
 func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract front matter from file
-	fm, err := tmpl.Extract(path)
+	fm, err := metadata.Extract(path)
 	if err != nil {
 		return err
 	}
@@ -272,7 +271,7 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 // syncNonDenoteFile syncs a binary file (metadata from filename)
 func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract metadata from filename
-	meta := p9server.ExtractMetadata(path)
+	meta := metadata.ExtractMetadata(path)
 
 	// Write title (triggers 'u' event)
 	titlePath := "n/" + identifier + "/title"

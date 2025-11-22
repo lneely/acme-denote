@@ -1,10 +1,10 @@
 package main
 
 import (
+	"denote/internal/metadata"
 	p9client "denote/internal/p9/client"
 	p9server "denote/internal/p9/server"
 	"denote/internal/sync"
-	"denote/internal/tmpl"
 	"fmt"
 	"io"
 	"log"
@@ -54,10 +54,10 @@ func buildDenoteFilename(identifier, title string, keywords []string, ext string
 
 func generateNotePath(dir, title string, keywords []string, fileType string) (string, string) {
 	identifier := generateIdentifier()
-	ext := tmpl.FileExtensions[fileType]
+	ext := metadata.FileExtensions[fileType]
 	filename := buildDenoteFilename(identifier, title, keywords, ext)
 	path := filepath.Join(dir, filename)
-	content := tmpl.Generate(title, keywords, fileType, identifier)
+	content := metadata.Generate(title, keywords, fileType, identifier)
 	return path, content
 }
 
@@ -114,8 +114,8 @@ func read9PFields(f *client.Fsys, identifier string, fields ...string) (map[stri
 	return result, nil
 }
 
-func readIndex() (p9server.Results, error) {
-	var results p9server.Results
+func readIndex() (metadata.Results, error) {
+	var results metadata.Results
 
 	err := p9client.With9P(func(f *client.Fsys) error {
 		indexContent, err := read9PFile(f, "index")
@@ -268,14 +268,14 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 			fileType = "txt"
 		}
 
-		fm := &tmpl.FrontMatter{
+		fm := &metadata.FrontMatter{
 			Title:      title,
 			Tags:       tags,
 			Identifier: identifier,
 			FileType:   fileType,
 		}
 
-		if err := tmpl.Update(path, fm); err != nil {
+		if err := metadata.Update(path, fm); err != nil {
 			log.Printf("failed to update front matter for %s: %v", identifier, err)
 		}
 	}
@@ -418,7 +418,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	p9server.Sort(rs, p9server.SortById, p9server.SortOrderDesc)
+	metadata.Sort(rs, metadata.SortById, metadata.SortOrderDesc)
 	refreshWindow(w, rs)
 
 	// listen for 'n' events to refresh window
@@ -575,7 +575,7 @@ func main() {
 				}
 
 				// Parse the window content
-				var emptyResults p9server.Results
+				var emptyResults metadata.Results
 				updated, err := emptyResults.FromString(string(body))
 				if err != nil {
 					log.Printf("failed to parse window: %v", err)
@@ -624,8 +624,8 @@ func performSearch(w *acme.Win, searchText string) {
 	args := parseArgs(searchText)
 
 	var filterArgs []string
-	sortBy := p9server.SortById
-	sortOrder := p9server.SortOrderDesc
+	sortBy := metadata.SortById
+	sortOrder := metadata.SortOrderDesc
 
 	for _, arg := range args {
 		if sortSpec, ok := strings.CutPrefix(arg, "sort:"); ok {
@@ -633,20 +633,20 @@ func performSearch(w *acme.Win, searchText string) {
 
 			switch parts[0] {
 			case "id", "date":
-				sortBy = p9server.SortById
+				sortBy = metadata.SortById
 			case "title":
-				sortBy = p9server.SortByTitle
+				sortBy = metadata.SortByTitle
 			}
 
 			if len(parts) > 1 {
 				switch parts[1] {
 				case "asc":
-					sortOrder = p9server.SortOrderAsc
+					sortOrder = metadata.SortOrderAsc
 				case "desc":
-					sortOrder = p9server.SortOrderDesc
+					sortOrder = metadata.SortOrderDesc
 				}
 			} else {
-				sortOrder = p9server.SortOrderAsc
+				sortOrder = metadata.SortOrderAsc
 			}
 		} else {
 			filterArgs = append(filterArgs, arg)
@@ -668,12 +668,12 @@ func performSearch(w *acme.Win, searchText string) {
 		log.Printf("search error: %v", err)
 		return
 	}
-	p9server.Sort(rs, sortBy, sortOrder)
+	metadata.Sort(rs, sortBy, sortOrder)
 
 	refreshWindow(w, rs)
 }
 
-func refreshWindow(w *acme.Win, rs p9server.Results) {
+func refreshWindow(w *acme.Win, rs metadata.Results) {
 	w.Addr(",")
 	w.Write("data", rs.Bytes())
 	w.Addr("#0")
@@ -692,7 +692,7 @@ func refreshWindowWithDefaults(w *acme.Win) {
 		log.Printf("error refreshing: %v", err)
 		return
 	}
-	p9server.Sort(rs, p9server.SortById, p9server.SortOrderDesc)
+	metadata.Sort(rs, metadata.SortById, metadata.SortOrderDesc)
 	refreshWindow(w, rs)
 }
 
@@ -749,14 +749,14 @@ func parseArgs(s string) []string {
 	return args
 }
 
-func applyIndexChanges(f *client.Fsys, current, updated p9server.Results) error {
+func applyIndexChanges(f *client.Fsys, current, updated metadata.Results) error {
 	// Validate entry count matches
 	if len(updated) != len(current) {
 		return fmt.Errorf("entry count mismatch: got %d, expected %d", len(updated), len(current))
 	}
 
 	// Build map of current state
-	currentMap := make(map[string]*p9server.Metadata)
+	currentMap := make(map[string]*metadata.Metadata)
 	for _, m := range current {
 		currentMap[m.Identifier] = m
 	}
@@ -770,7 +770,7 @@ func applyIndexChanges(f *client.Fsys, current, updated p9server.Results) error 
 
 		// Check if anything changed
 		titleChanged := orig.Title != upd.Title
-		tagsChanged := !p9server.SlicesEqual(orig.Tags, upd.Tags)
+		tagsChanged := !metadata.SlicesEqual(orig.Tags, upd.Tags)
 
 		if titleChanged || tagsChanged {
 			// Write both title and keywords
@@ -807,7 +807,7 @@ func watchNoteWindow(win *acme.Win, path string) {
 				win.WriteEvent(e)
 
 				encryptedPath := path + ".gpg"
-				meta := p9server.ExtractMetadata(encryptedPath)
+				meta := metadata.ExtractMetadata(encryptedPath)
 
 				var newInput string
 				if len(meta.Tags) > 0 {

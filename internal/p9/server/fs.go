@@ -31,6 +31,7 @@ Notes:
 package fs
 
 import (
+	"denote/internal/metadata"
 	"fmt"
 	"io"
 	"net"
@@ -38,7 +39,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -46,92 +46,6 @@ import (
 	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
 )
-
-// Metadata is the metadata encoded into Denote-style
-// file names.
-type Metadata struct {
-	Path       string
-	Identifier string
-	Title      string
-	Tags       []string
-	Extension  string
-}
-type Results []*Metadata
-
-func (es Results) Bytes() []byte {
-	var buf strings.Builder
-	for _, e := range es {
-		title := e.Title
-		if title == "" {
-			title = "(untitled)"
-		}
-
-		tags := strings.Join(e.Tags, ",")
-		fmt.Fprintf(&buf, "%s | %s | %s\n", e.Identifier, title, tags)
-	}
-	return []byte(buf.String())
-}
-
-func (es Results) FromString(data string) (Results, error) {
-	var results Results
-	lines := strings.Split(strings.TrimSpace(data), "\n")
-	// Allow lowercase unicode letters and digits, no spaces
-	tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
-
-	for lineNum, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		parts := strings.Split(line, "|")
-		if len(parts) != 3 {
-			return nil, fmt.Errorf("line %d: expected 3 columns, got %d (line: %q)", lineNum+1, len(parts), line)
-		}
-
-		identifier := strings.TrimSpace(parts[0])
-		title := strings.TrimSpace(parts[1])
-		tagsStr := strings.TrimSpace(parts[2])
-
-		if identifier == "" {
-			return nil, fmt.Errorf("line %d: identifier cannot be empty", lineNum+1)
-		}
-
-		if strings.Contains(title, "|") {
-			return nil, fmt.Errorf("line %d: title cannot contain '|'", lineNum+1)
-		}
-
-		var tags []string
-		if tagsStr != "" {
-			if !tagPattern.MatchString(tagsStr) {
-				return nil, fmt.Errorf("line %d: tags must be comma-delimited lowercase unicode words (no spaces): got '%s'", lineNum+1, tagsStr)
-			}
-			tags = strings.Split(tagsStr, ",")
-		} else {
-			tags = []string{}
-		}
-
-		results = append(results, &Metadata{
-			Identifier: identifier,
-			Title:      title,
-			Tags:       tags,
-		})
-	}
-
-	return results, nil
-}
-
-func SlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
 
 // Filter matches a given field in a Result to a regular expression
 type Filter struct {
@@ -207,7 +121,7 @@ func NewFilter(arg string) (*Filter, error) {
 }
 
 // IsMatch checks if a note matches this filter
-func (f *Filter) IsMatch(n *Metadata) bool {
+func (f *Filter) IsMatch(n *metadata.Metadata) bool {
 	result := false
 	switch f.field {
 	case FilterDate:
@@ -237,46 +151,6 @@ func (f *Filter) IsMatch(n *Metadata) bool {
 	return result
 }
 
-type SortBy string
-
-const (
-	SortById    SortBy = "id"
-	SortByDate  SortBy = "date"
-	SortByTitle SortBy = "title"
-)
-
-type SortOrder int
-
-const (
-	SortOrderAsc SortOrder = iota
-	SortOrderDesc
-)
-
-// Sort organizes a list of notes by sortType and order using metadata.
-func Sort(md Results, sortType SortBy, order SortOrder) {
-	switch sortType {
-	case SortById, SortByDate:
-		sort.Slice(md, func(i, j int) bool {
-			if order == SortOrderAsc {
-				return md[i].Identifier < md[j].Identifier // Reverse chronological by default
-			} else {
-				return md[i].Identifier > md[j].Identifier // Reverse chronological by default
-			}
-		})
-	case SortByTitle:
-		sort.Slice(md, func(i, j int) bool {
-			if order == SortOrderAsc {
-				return strings.ToLower(md[i].Title) < strings.ToLower(md[j].Title)
-			} else {
-				return strings.ToLower(md[i].Title) > strings.ToLower(md[j].Title)
-			}
-		})
-	default:
-		sort.Slice(md, func(i, j int) bool {
-			return md[i].Identifier > md[j].Identifier // Reverse chronological by default
-		})
-	}
-}
 
 // File types in our filesystem
 const (
@@ -312,7 +186,7 @@ var fileNames = []string{"path", "title", "keywords", "extension", "ctl"}
 
 type server struct {
 	dir           string
-	notes         Results
+	notes         metadata.Results
 	mu            sync.RWMutex
 	eventChan     chan string
 	eventSubs     map[uint64]chan string
@@ -320,7 +194,7 @@ type server struct {
 	nextSubID     uint64
 	nextSubIDMu   sync.Mutex
 	filterQuery   string
-	filteredNotes []*Metadata
+	filteredNotes []*metadata.Metadata
 }
 
 type connState struct {
@@ -339,7 +213,7 @@ type fid struct {
 var srv *server
 
 // findNote finds a note by identifier in the in-memory collection
-func findNote(identifier string) (*Metadata, error) {
+func findNote(identifier string) (*metadata.Metadata, error) {
 	srv.mu.RLock()
 	defer srv.mu.RUnlock()
 	for _, n := range srv.notes {
@@ -359,72 +233,6 @@ func emitEvent(id string, op rune) {
 	}
 }
 
-// ExtractMetadata extracts Denote metadata from a filename
-func ExtractMetadata(path string) *Metadata {
-	fname := filepath.Base(path)
-	note := &Metadata{Path: path}
-
-	if m := regexp.MustCompile(`^(\d{8}T\d{6})`).FindStringSubmatch(fname); m != nil {
-		note.Identifier = m[1]
-	}
-
-	// Extract title from filename
-	filenameTitle := ""
-	if m := regexp.MustCompile(`--([^_\.]+)`).FindStringSubmatch(fname); m != nil {
-		filenameTitle = strings.ReplaceAll(m[1], "-", " ")
-	}
-
-	// Try to get title from file content, fall back to filename
-	fileContentTitle := extractTitle(path)
-	if fileContentTitle != "" {
-		note.Title = fileContentTitle
-	} else {
-		note.Title = filenameTitle
-	}
-
-	if m := regexp.MustCompile(`__(.+?)(?:\.|$)`).FindStringSubmatch(fname); m != nil {
-		note.Tags = strings.Split(m[1], "_")
-	}
-	note.Extension = filepath.Ext(fname)
-
-	return note
-}
-
-func extractTitle(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext != ".org" && ext != ".md" && ext != ".txt" {
-		return ""
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	text := string(data)
-
-	// Try org-mode #+title: first, then fall back to first heading
-	if ext == ".org" {
-		if m := regexp.MustCompile(`(?m)^#\+title:\s*(.+)$`).FindStringSubmatch(text); m != nil {
-			return strings.TrimSpace(m[1])
-		}
-		// Fallback to first heading (lines starting with *)
-		if m := regexp.MustCompile(`(?m)^\*+\s+(.+)$`).FindStringSubmatch(text); m != nil {
-			return strings.TrimSpace(m[1])
-		}
-	}
-
-	// Try markdown YAML front matter title: first, then fall back to # header
-	if ext == ".md" {
-		if m := regexp.MustCompile(`(?ms)^---\n.*?^title:\s*(.+?)$.*?^---`).FindStringSubmatch(text); m != nil {
-			return strings.TrimSpace(strings.Trim(m[1], `"`))
-		}
-		if m := regexp.MustCompile(`(?m)^#\s+(.+)$`).FindStringSubmatch(text); m != nil {
-			return strings.TrimSpace(m[1])
-		}
-	}
-
-	return ""
-}
 
 // Getdir returns the denote directory
 func getdir() string {
@@ -432,8 +240,8 @@ func getdir() string {
 }
 
 // loadData returns metadata for notes in a directory matching given filters
-func loadData(filters []*Filter) (Results, error) {
-	var notes Results
+func loadData(filters []*Filter) (metadata.Results, error) {
+	var notes metadata.Results
 	err := filepath.Walk(getdir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -441,7 +249,7 @@ func loadData(filters []*Filter) (Results, error) {
 		if info.IsDir() {
 			return nil
 		}
-		if note := ExtractMetadata(path); note.Identifier != "" {
+		if note := metadata.ExtractMetadata(path); note.Identifier != "" {
 			match := true
 			for _, filt := range filters {
 				if !filt.IsMatch(note) {
@@ -462,7 +270,7 @@ func loadData(filters []*Filter) (Results, error) {
 	return notes, nil
 }
 
-func AddNote(note *Metadata) error {
+func AddNote(note *metadata.Metadata) error {
 	if srv == nil {
 		return fmt.Errorf("server not running")
 	}
@@ -474,7 +282,7 @@ func AddNote(note *Metadata) error {
 	return nil
 }
 
-func GetNote(identifier string) (*Metadata, error) {
+func GetNote(identifier string) (*metadata.Metadata, error) {
 	if srv == nil {
 		return nil, fmt.Errorf("server not running")
 	}
@@ -933,7 +741,7 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 
 		// Create metadata entry with temporary path
 		// (actual file will be created by denote package event handler)
-		metadata := &Metadata{
+		meta := &metadata.Metadata{
 			Identifier: identifier,
 			Title:      title,
 			Tags:       tags,
@@ -943,7 +751,7 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 
 		// Add to in-memory state
 		s.mu.Lock()
-		s.notes = append(s.notes, metadata)
+		s.notes = append(s.notes, meta)
 		s.mu.Unlock()
 
 		// Emit event notification
@@ -1249,7 +1057,7 @@ func (s *server) getIndexContent() string {
 	}
 
 	// Return filtered notes
-	var filtered Results
+	var filtered metadata.Results
 	for _, note := range s.filteredNotes {
 		filtered = append(filtered, note)
 	}
@@ -1334,7 +1142,7 @@ func (s *server) handleFilterCommand(fc *plan9.Fcall, command string) *plan9.Fca
 	}
 
 	// Apply filters to notes
-	var filtered []*Metadata
+	var filtered []*metadata.Metadata
 	for _, note := range s.notes {
 		match := true
 		for _, filt := range filters {
