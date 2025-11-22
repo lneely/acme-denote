@@ -219,12 +219,8 @@ func eventListener() {
 						log.Printf("error handling rename for %s: %v", identifier, err)
 					}
 				case "n":
-					if err := handleNewEvent(identifier); err != nil {
+					if err := handleNewEvent(f, identifier); err != nil {
 						log.Printf("error handling new for %s: %v", identifier, err)
-					}
-				case "d":
-					if err := handleDeleteEvent(identifier); err != nil {
-						log.Printf("error handling delete for %s: %v", identifier, err)
 					}
 				}
 			}
@@ -280,53 +276,79 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 		}
 	}
 
+	// After updating content, check if a rename is needed
+	dir := filepath.Dir(path)
+	if dir == "." {
+		dir = denoteDir
+	}
+	filename := buildDenoteFilename(identifier, title, tags, ext)
+	newPath := filepath.Join(dir, filename)
+
+	if newPath != path {
+		if err := p9client.WriteFile(f, "n/"+identifier+"/path", newPath); err != nil {
+			return fmt.Errorf("failed to update path in 9p: %w", err)
+		}
+	}
+
 	return nil
 }
 
 func handleRenameEvent(f *client.Fsys, identifier string) error {
-	fields, err := read9PFields(f, identifier, "title", "keywords", "path")
+	// Get new path from 9P server.
+	newPath, err := read9PFile(f, "n/"+identifier+"/path")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read path: %w", err)
 	}
 
-	title := fields["title"]
-	keywords := fields["keywords"]
-	path := fields["path"]
-
-	var tags []string
-	if keywords != "" {
-		for _, tag := range strings.Split(keywords, ",") {
-			tags = append(tags, strings.TrimSpace(tag))
-		}
+	if newPath == "" {
+		// Path is not set yet. This can happen during note creation.
+		return nil
 	}
 
-	newPath, err := renameNote(path, title, tags, identifier)
+	// Find old file on disk.
+	pattern := filepath.Join(denoteDir, identifier+"--*")
+	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to rename file: %w", err)
+		return fmt.Errorf("failed to find file: %w", err)
 	}
 
-	if newPath != path {
-		if err := p9server.UpdateNotePath(identifier, newPath); err != nil {
-			return fmt.Errorf("failed to update path: %w", err)
+	if len(matches) == 0 {
+		// File doesn't exist on disk. Nothing to rename.
+		return nil
+	}
+	oldPath := matches[0]
+
+	// Rename if different.
+	if oldPath != newPath {
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return fmt.Errorf("failed to rename file from %s to %s: %w", oldPath, newPath, err)
 		}
 	}
 
 	return nil
 }
 
-func handleNewEvent(identifier string) error {
-	metadata, err := p9server.GetNote(identifier)
+func handleNewEvent(f *client.Fsys, identifier string) error {
+	fields, err := read9PFields(f, identifier, "title", "keywords")
 	if err != nil {
 		return fmt.Errorf("failed to get metadata: %w", err)
 	}
+	title := fields["title"]
+	var tags []string
+	if keywords, ok := fields["keywords"]; ok && keywords != "" {
+		tags = strings.Split(keywords, ",")
+		for i := range tags {
+			tags[i] = strings.TrimSpace(tags[i])
+		}
+	}
 
-	path, content := generateNotePath(denoteDir, metadata.Title, metadata.Tags, "md-yaml")
+	path, content := generateNotePath(denoteDir, title, tags, "md-yaml")
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to create note file: %w", err)
 	}
 
-	if err := p9server.UpdateNotePath(identifier, path); err != nil {
+	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
 		return fmt.Errorf("failed to update path in metadata: %w", err)
 	}
 

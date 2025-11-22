@@ -164,41 +164,7 @@ func loadData(filters []*metadata.Filter) (metadata.Results, error) {
 	return notes, nil
 }
 
-func AddNote(note *metadata.Metadata) error {
-	if srv == nil {
-		return fmt.Errorf("server not running")
-	}
 
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-
-	srv.notes = append(srv.notes, note)
-	return nil
-}
-
-func GetNote(identifier string) (*metadata.Metadata, error) {
-	if srv == nil {
-		return nil, fmt.Errorf("server not running")
-	}
-
-	return findNote(identifier)
-}
-
-func UpdateNotePath(identifier, path string) error {
-	if srv == nil {
-		return fmt.Errorf("server not running")
-	}
-
-	note, err := findNote(identifier)
-	if err != nil {
-		return err
-	}
-
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	note.Path = path
-	return nil
-}
 
 // StartServer starts the 9P fileserver in the background
 func StartServer() error {
@@ -676,6 +642,9 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	value := strings.TrimSpace(string(fc.Data))
 
 	switch fieldName {
+	case "path":
+		note.Path = value
+		emitEvent(noteID, 'r')
 	case "title":
 		note.Title = value
 		emitEvent(noteID, 'u')
@@ -858,7 +827,7 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 		for i, fname := range fileNames {
 			content := s.getFileContent(path + "/" + fname)
 			mode := uint32(0444) // read-only by default
-			if fname == "title" || fname == "keywords" {
+			if fname == "title" || fname == "keywords" || fname == "path" {
 				mode = 0644 // writable
 			} else if fname == "ctl" {
 				mode = 0200 // write-only
