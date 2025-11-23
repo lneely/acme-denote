@@ -35,7 +35,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -77,7 +76,6 @@ const (
 var fileNames = []string{"path", "title", "keywords", "ctl"}
 
 type server struct {
-	dir           string
 	notes         metadata.Results
 	mu            sync.RWMutex
 	eventChan     chan string
@@ -127,58 +125,15 @@ func emitEvent(id string, op rune) {
 
 
 // Getdir returns the denote directory
-func getdir() string {
-	return fmt.Sprintf("%s/doc", os.Getenv("HOME"))
-}
-
-// loadData returns metadata for notes in a directory matching given filters
-func loadData(filters []*metadata.Filter) (metadata.Results, error) {
-	var notes metadata.Results
-	err := filepath.Walk(getdir(), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if note := metadata.ExtractMetadata(path); note.Identifier != "" {
-			match := true
-			for _, filt := range filters {
-				if !filt.IsMatch(note) {
-					match = false
-					break
-				}
-			}
-			if match {
-				notes = append(notes, note)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return notes, nil
-}
-
-
-
-// StartServer starts the 9P fileserver in the background
-func StartServer() error {
+// StartServer starts the 9P fileserver in the background with pre-loaded metadata.
+// initialData should contain all notes to be served - typically loaded by sync.LoadAll().
+func StartServer(initialData metadata.Results) error {
 	if srv != nil {
 		return fmt.Errorf("server already running")
 	}
 
-	// Load all notes
-	notes, err := loadData([]*metadata.Filter{})
-	if err != nil {
-		return fmt.Errorf("failed to load notes: %w", err)
-	}
-
 	srv = &server{
-		dir:       getdir(),
-		notes:     notes,
+		notes:     initialData,
 		eventChan: make(chan string, 100),
 		eventSubs: make(map[uint64]chan string),
 	}
@@ -666,6 +621,13 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			for i, n := range s.notes {
 				if n.Identifier == noteID {
 					s.notes = append(s.notes[:i], s.notes[i+1:]...)
+					break
+				}
+			}
+			// Also remove from filtered notes
+			for i, n := range s.filteredNotes {
+				if n.Identifier == noteID {
+					s.filteredNotes = append(s.filteredNotes[:i], s.filteredNotes[i+1:]...)
 					break
 				}
 			}

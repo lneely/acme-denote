@@ -1,8 +1,8 @@
-// Package client provides 9P client helpers for connecting to the denote server.
+// Package client provides pure 9P client I/O operations for the denote server.
+// This package contains NO business logic - only read/write primitives.
 package client
 
 import (
-	"denote/internal/metadata"
 	"fmt"
 	"io"
 	"strings"
@@ -79,65 +79,3 @@ func ReadFields(f *client.Fsys, identifier string, fields ...string) (map[string
 	return result, nil
 }
 
-func ReadIndex() (metadata.Results, error) {
-	var results metadata.Results
-
-	err := With9P(func(f *client.Fsys) error {
-		indexContent, err := ReadFile(f, "index")
-		if err != nil {
-			return fmt.Errorf("failed to read index: %w", err)
-		}
-
-		results, err = results.FromString(indexContent)
-		if err != nil {
-			return err
-		}
-
-		// Populate Path for each note
-		for _, note := range results {
-			fields, err := ReadFields(f, note.Identifier, "path")
-			if err != nil {
-				return fmt.Errorf("failed to read fields for %s: %w", note.Identifier, err)
-			}
-			note.Path = fields["path"]
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return results, nil
-}
-
-func SetFilter(filterQuery string) error {
-	return With9P(func(f *client.Fsys) error {
-		var cmd string
-		if filterQuery == "" {
-			cmd = "filter"
-		} else {
-			cmd = "filter " + filterQuery
-		}
-		return WriteFile(f, "ctl", cmd)
-	})
-}
-
-func IdentifierToPath(identifier string) (string, error) {
-	if err := SetFilter(fmt.Sprintf("date:%s", identifier)); err != nil {
-		return "", fmt.Errorf("failed to set filter: %w", err)
-	}
-	defer SetFilter("")
-
-	notes, err := ReadIndex()
-	if err != nil {
-		return "", fmt.Errorf("failed to read index: %w", err)
-	}
-
-	if len(notes) == 0 {
-		return "", fmt.Errorf("no note found with identifier %s", identifier)
-	}
-
-	return notes[0].Path, nil
-}

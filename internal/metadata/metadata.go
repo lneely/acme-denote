@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -57,10 +56,6 @@ func (es Results) FromString(data string) (Results, error) {
 
 		if identifier == "" {
 			return nil, fmt.Errorf("line %d: identifier cannot be empty", lineNum+1)
-		}
-
-		if strings.Contains(title, "|") {
-			return nil, fmt.Errorf("line %d: title cannot contain '|'", lineNum+1)
 		}
 
 		var tags []string
@@ -136,8 +131,10 @@ func Sort(md Results, sortType SortBy, order SortOrder) {
 	}
 }
 
-// ExtractMetadata extracts Denote metadata from a filename
-func ExtractMetadata(path string) *Metadata {
+// ParseFilename extracts Denote metadata from a filename only (no file I/O).
+// Returns metadata with Path, Identifier, Title (from filename), and Tags.
+// Caller should use ExtractTitleFromContent to get title from file content.
+func ParseFilename(path string) *Metadata {
 	fname := filepath.Base(path)
 	note := &Metadata{Path: path}
 
@@ -146,17 +143,8 @@ func ExtractMetadata(path string) *Metadata {
 	}
 
 	// Extract title from filename
-	filenameTitle := ""
 	if m := regexp.MustCompile(`--([^_\.]+)`).FindStringSubmatch(fname); m != nil {
-		filenameTitle = strings.ReplaceAll(m[1], "-", " ")
-	}
-
-	// Try to get title from file content, fall back to filename
-	fileContentTitle := extractTitle(path)
-	if fileContentTitle != "" {
-		note.Title = fileContentTitle
-	} else {
-		note.Title = filenameTitle
+		note.Title = strings.ReplaceAll(m[1], "-", " ")
 	}
 
 	if m := regexp.MustCompile(`__(.+?)(?:\.|$)`).FindStringSubmatch(fname); m != nil {
@@ -166,35 +154,32 @@ func ExtractMetadata(path string) *Metadata {
 	return note
 }
 
-func extractTitle(path string) string {
-	ext := strings.ToLower(filepath.Ext(strings.TrimSuffix(path, ".gpg")))
+// ExtractTitleFromContent extracts the title from file content.
+// ext should be the file extension (e.g., ".md", ".org", ".txt").
+// Returns empty string if no title found or unsupported extension.
+func ExtractTitleFromContent(content string, ext string) string {
+	ext = strings.ToLower(ext)
 	if ext != ".org" && ext != ".md" && ext != ".txt" {
 		return ""
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	text := string(data)
-
 	// Try org-mode #+title: first, then fall back to first heading
 	if ext == ".org" {
-		if m := regexp.MustCompile(`(?m)^#\+title:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^#\+title:\s*(.+)$`).FindStringSubmatch(content); m != nil {
 			return strings.TrimSpace(m[1])
 		}
 		// Fallback to first heading (lines starting with *)
-		if m := regexp.MustCompile(`(?m)^\*+\s+(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^\*+\s+(.+)$`).FindStringSubmatch(content); m != nil {
 			return strings.TrimSpace(m[1])
 		}
 	}
 
 	// Try markdown YAML front matter title: first, then fall back to # header
 	if ext == ".md" {
-		if m := regexp.MustCompile(`(?ms)^---\n.*?^title:\s*(.+?)$.*?^---`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?ms)^---\n.*?^title:\s*(.+?)$.*?^---`).FindStringSubmatch(content); m != nil {
 			return strings.TrimSpace(strings.Trim(m[1], `"`))
 		}
-		if m := regexp.MustCompile(`(?m)^#\s+(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^#\s+(.+)$`).FindStringSubmatch(content); m != nil {
 			return strings.TrimSpace(m[1])
 		}
 	}

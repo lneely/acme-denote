@@ -2,8 +2,6 @@ package metadata
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -74,14 +72,11 @@ type FrontMatter struct {
 	FileType   string // org, md-yaml, md-toml, txt
 }
 
-// Extract extracts front matter from a file
-func Extract(path string) (*FrontMatter, error) {
-	ext := strings.ToLower(filepath.Ext(path))
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	text := string(data)
+// ParseFrontMatter extracts front matter from file content.
+// ext should be the file extension (e.g., ".md", ".org", ".txt").
+func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
+	ext = strings.ToLower(ext)
+	text := content
 
 	fm := &FrontMatter{}
 
@@ -155,13 +150,10 @@ func Extract(path string) (*FrontMatter, error) {
 	return fm, nil
 }
 
-// Update updates front matter in a file
-func Update(path string, fm *FrontMatter) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	text := string(data)
+// UpdateFrontMatter updates front matter in file content and returns the new content.
+// originalContent is the current file content, fm is the new front matter to apply.
+func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) {
+	text := originalContent
 
 	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
 	keywordsStr := FormatTags(fm.Tags, fm.FileType)
@@ -219,10 +211,10 @@ func Update(path string, fm *FrontMatter) error {
 			newText = newFrontMatter + text
 		}
 	default:
-		return fmt.Errorf("unsupported file type: %s", fm.FileType)
+		return "", fmt.Errorf("unsupported file type: %s", fm.FileType)
 	}
 
-	return os.WriteFile(path, []byte(newText), 0644)
+	return newText, nil
 }
 
 // Generate generates front matter content for given parameters

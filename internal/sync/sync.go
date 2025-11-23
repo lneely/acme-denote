@@ -61,9 +61,11 @@ func WatchAcmeLog() {
 			exists := noteExists(identifier)
 
 			if exists {
-				// Existing note: sync front matter (triggers 'u' event)
-				if err := syncFrontMatter(ev.Name, identifier); err != nil {
-					log.Printf("sync: failed to sync %s: %v", ev.Name, err)
+				// Existing note: sync front matter if supported (triggers 'u' event)
+				if SupportsFrontMatter(ev.Name) {
+					if err := syncFrontMatter(ev.Name, identifier); err != nil {
+						log.Printf("sync: failed to sync %s: %v", ev.Name, err)
+					}
 				}
 			} else {
 				// New note: register with 9P (triggers 'n' event)
@@ -111,7 +113,10 @@ func noteExists(identifier string) bool {
 
 // registerNewNote writes to /new to register a new note (triggers 'n' event)
 func registerNewNote(path string) error {
-	meta := metadata.ExtractMetadata(path)
+	meta, err := ExtractMetadata(path)
+	if err != nil {
+		return err
+	}
 
 	// Format as 'title' tag1,tag2
 	var newInput string
@@ -129,7 +134,7 @@ func registerNewNote(path string) error {
 // syncFrontMatter reads the file's front matter and writes it to 9P metadata
 func syncFrontMatter(path, identifier string) error {
 	// Extract front matter from file
-	fm, err := metadata.Extract(path)
+	fm, err := ExtractFrontMatter(path)
 	if err != nil {
 		return err
 	}
@@ -201,7 +206,7 @@ func SyncAll() error {
 				continue
 			}
 
-			// Read path and extension
+			// Read path
 			pathFid, err := f.Open("n/"+identifier+"/path", 0)
 			if err != nil {
 				log.Printf("sync: failed to read path for %s: %v", identifier, err)
@@ -212,18 +217,17 @@ func SyncAll() error {
 			pathFid.Close()
 			path := strings.TrimSpace(string(pathBuf[:n]))
 
-			extFid, err := f.Open("n/"+identifier+"/extension", 0)
-			if err != nil {
-				log.Printf("sync: failed to read extension for %s: %v", identifier, err)
+			// Check if file exists on filesystem
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				// File was deleted, emit 'd' event to clean up metadata
+				if err := p9client.WriteFile(f, "n/"+identifier+"/ctl", "d"); err != nil {
+					log.Printf("sync: failed to emit delete event for %s: %v", identifier, err)
+				}
 				continue
 			}
-			extBuf := make([]byte, 8192)
-			n, _ = extFid.Read(extBuf)
-			extFid.Close()
-			ext := strings.TrimSpace(string(extBuf[:n]))
 
-			// Route to appropriate sync function
-			if ext == ".org" || ext == ".md" || ext == ".txt" {
+			// Route to appropriate sync function based on file type
+			if SupportsFrontMatter(path) {
 				if err := syncDenoteFile(f, path, identifier); err != nil {
 					log.Printf("sync: failed to sync denote file %s: %v", identifier, err)
 				}
@@ -241,7 +245,7 @@ func SyncAll() error {
 // syncDenoteFile syncs a text file with front matter
 func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract front matter from file
-	fm, err := metadata.Extract(path)
+	fm, err := ExtractFrontMatter(path)
 	if err != nil {
 		return err
 	}
@@ -271,7 +275,7 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 // syncNonDenoteFile syncs a binary file (metadata from filename)
 func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract metadata from filename
-	meta := metadata.ExtractMetadata(path)
+	meta := metadata.ParseFilename(path)
 
 	// Write title (triggers 'u' event)
 	titlePath := "n/" + identifier + "/title"

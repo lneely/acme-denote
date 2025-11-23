@@ -77,6 +77,42 @@ func renameNote(oldPath, title string, keywords []string, identifier string) (st
 	return newPath, nil
 }
 
+// Helper functions for 9P operations
+
+// readIndex reads and parses the index from 9P server.
+func readIndex(f *client.Fsys) (metadata.Results, error) {
+	indexContent, err := p9client.ReadFile(f, "index")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read index: %w", err)
+	}
+
+	var results metadata.Results
+	results, err = results.FromString(indexContent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Populate Path for each note
+	for _, note := range results {
+		path, err := p9client.ReadFile(f, "n/"+note.Identifier+"/path")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read path for %s: %w", note.Identifier, err)
+		}
+		note.Path = path
+	}
+
+	return results, nil
+}
+
+// setFilter sets or clears the filter on the 9P server.
+func setFilter(f *client.Fsys, filterQuery string) error {
+	cmd := "filter"
+	if filterQuery != "" {
+		cmd = "filter " + filterQuery
+	}
+	return p9client.WriteFile(f, "ctl", cmd)
+}
+
 // Event handling
 
 func eventListener() {
@@ -121,6 +157,10 @@ func eventListener() {
 					if err := handleNewEvent(f, identifier); err != nil {
 						log.Printf("error handling new for %s: %v", identifier, err)
 					}
+				case "d":
+					if err := handleDeleteEvent(identifier); err != nil {
+						log.Printf("error handling delete for %s: %v", identifier, err)
+					}
 				}
 			}
 		})
@@ -133,7 +173,7 @@ func eventListener() {
 }
 
 func handleUpdateEvent(f *client.Fsys, identifier string) error {
-	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "path", "extension")
+	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "path")
 	if err != nil {
 		return err
 	}
@@ -141,7 +181,6 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 	title := fields["title"]
 	keywords := fields["keywords"]
 	path := fields["path"]
-	ext := fields["extension"]
 
 	var tags []string
 	if keywords != "" {
@@ -150,9 +189,8 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 		}
 	}
 
-	isDenoteFile := ext == ".org" || ext == ".md" || ext == ".txt"
-
-	if isDenoteFile {
+	if sync.SupportsFrontMatter(path) {
+		ext := strings.ToLower(filepath.Ext(path))
 		var fileType string
 		switch ext {
 		case ".org":
@@ -170,12 +208,13 @@ func handleUpdateEvent(f *client.Fsys, identifier string) error {
 			FileType:   fileType,
 		}
 
-		if err := metadata.Update(path, fm); err != nil {
+		if err := sync.UpdateFrontMatter(path, fm); err != nil {
 			log.Printf("failed to update front matter for %s: %v", identifier, err)
 		}
 	}
 
 	// After updating content, check if a rename is needed
+	ext := strings.ToLower(filepath.Ext(strings.TrimSuffix(path, ".gpg")))
 	dir := filepath.Dir(path)
 	if dir == "." {
 		dir = denoteDir
@@ -284,13 +323,42 @@ func main() {
 	args := os.Args[1:]
 	if len(args) == 1 {
 		if identifier, ok := strings.CutPrefix(args[0], "denote:"); ok {
-			path, err := p9client.IdentifierToPath(identifier)
+			// Find note by identifier using 9P
+			var notePath string
+			err := p9client.With9P(func(f *client.Fsys) error {
+				// Set filter to find the identifier
+				if err := p9client.WriteFile(f, "ctl", "filter date:"+identifier); err != nil {
+					return err
+				}
+				defer p9client.WriteFile(f, "ctl", "filter") // Clear filter
+
+				// Read index
+				indexContent, err := p9client.ReadFile(f, "index")
+				if err != nil {
+					return err
+				}
+
+				// Parse index
+				var results metadata.Results
+				results, err = results.FromString(indexContent)
+				if err != nil {
+					return err
+				}
+
+				if len(results) == 0 {
+					return fmt.Errorf("no note found with identifier %s", identifier)
+				}
+
+				// Read path for first result
+				notePath, err = p9client.ReadFile(f, "n/"+results[0].Identifier+"/path")
+				return err
+			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error finding note: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Println(path)
-			if err := exec.Command("plumb", path).Run(); err != nil {
+			fmt.Println(notePath)
+			if err := exec.Command("plumb", notePath).Run(); err != nil {
 				log.Printf("failed to plumb identifier: %v", err)
 			}
 			return
@@ -303,8 +371,14 @@ func main() {
 		}
 	}
 
-	// 9p server startup
-	if err := p9server.StartServer(); err != nil {
+	// Load metadata from filesystem
+	notes, err := sync.LoadAll(denoteDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to load notes: %v\n", err)
+	}
+
+	// 9p server startup with pre-loaded data
+	if err := p9server.StartServer(notes); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to start fileserver: %v\n", err)
 	}
 
@@ -332,10 +406,15 @@ func main() {
 	}
 
 	// get initial results (clear any filter, read index)
-	if err := p9client.SetFilter(""); err != nil {
-		panic(err)
-	}
-	rs, err := p9client.ReadIndex()
+	var rs metadata.Results
+	err = p9client.With9P(func(f *client.Fsys) error {
+		if err := setFilter(f, ""); err != nil {
+			return err
+		}
+		var err error
+		rs, err = readIndex(f)
+		return err
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -505,11 +584,15 @@ func main() {
 
 				// Get current results and apply changes
 				// Read unfiltered index
-				if err := p9client.SetFilter(""); err != nil {
-					log.Printf("failed to clear filter: %v", err)
-					break
-				}
-				current, err := p9client.ReadIndex()
+				var current metadata.Results
+				err = p9client.With9P(func(f *client.Fsys) error {
+					if err := setFilter(f, ""); err != nil {
+						return err
+					}
+					var err error
+					current, err = readIndex(f)
+					return err
+				})
 				if err != nil {
 					log.Printf("failed to get current results: %v", err)
 					break
@@ -577,14 +660,16 @@ func performSearch(w *acme.Win, searchText string) {
 	// Build filter query string for ctl
 	filterQuery := strings.Join(filterArgs, " ")
 
-	// Set filter on server
-	if err := p9client.SetFilter(filterQuery); err != nil {
-		log.Printf("failed to set filter: %v", err)
-		return
-	}
-
-	// Read filtered index
-	rs, err := p9client.ReadIndex()
+	// Set filter and read index
+	var rs metadata.Results
+	err := p9client.With9P(func(f *client.Fsys) error {
+		if err := setFilter(f, filterQuery); err != nil {
+			return err
+		}
+		var err error
+		rs, err = readIndex(f)
+		return err
+	})
 	if err != nil {
 		log.Printf("search error: %v", err)
 		return
@@ -603,12 +688,15 @@ func refreshWindow(w *acme.Win, rs metadata.Results) {
 }
 
 func refreshWindowWithDefaults(w *acme.Win) {
-	// Clear filter and read index
-	if err := p9client.SetFilter(""); err != nil {
-		log.Printf("error clearing filter: %v", err)
-		return
-	}
-	rs, err := p9client.ReadIndex()
+	var rs metadata.Results
+	err := p9client.With9P(func(f *client.Fsys) error {
+		if err := setFilter(f, ""); err != nil {
+			return err
+		}
+		var err error
+		rs, err = readIndex(f)
+		return err
+	})
 	if err != nil {
 		log.Printf("error refreshing: %v", err)
 		return
@@ -728,7 +816,7 @@ func watchNoteWindow(win *acme.Win, path string) {
 				win.WriteEvent(e)
 
 				encryptedPath := path + ".gpg"
-				meta := metadata.ExtractMetadata(encryptedPath)
+				meta := metadata.ParseFilename(encryptedPath)
 
 				var newInput string
 				if len(meta.Tags) > 0 {
