@@ -261,7 +261,6 @@ func main() {
 							// Delete: preserve current position
 							w.Ctl("addr=dot")
 							q0, q1, err := w.ReadAddr()
-							log.Printf("delete event: saving position q0=%d q1=%d err=%v", q0, q1, err)
 
 							refreshWindowWithDefaults(w)
 
