@@ -122,7 +122,6 @@ func eventListener() {
 	}
 }
 
-
 func main() {
 	var err error
 	var w *acme.Win
@@ -252,8 +251,24 @@ func main() {
 					event := strings.TrimSpace(string(buf[:n]))
 					parts := strings.Fields(event)
 					if len(parts) >= 2 {
-						if parts[1] == "n" || parts[1] == "d" {
+						if parts[1] == "n" {
+							// New note: scroll to top to show it
 							refreshWindowWithDefaults(w)
+							w.Addr("#0")
+							w.Ctl("dot=addr")
+							w.Ctl("show")
+						} else if parts[1] == "d" {
+							// Delete: preserve current position
+							w.Ctl("addr=dot")
+							q0, q1, err := w.ReadAddr()
+							log.Printf("delete event: saving position q0=%d q1=%d err=%v", q0, q1, err)
+
+							refreshWindowWithDefaults(w)
+
+							log.Printf("delete event: restoring position to #%d,#%d", q0, q1)
+							w.Addr("#%d,#%d", q0, q1)
+							w.Ctl("dot=addr")
+							w.Ctl("show")
 						}
 					}
 				}
@@ -486,10 +501,11 @@ func performSearch(w *acme.Win, searchText string) {
 }
 
 func refreshWindow(w *acme.Win, rs metadata.Results) {
+	log.Printf("refreshWindow: clearing and writing %d bytes", len(rs.Bytes()))
 	w.Addr(",")
 	w.Write("data", rs.Bytes())
-	w.Addr("#0")
-	w.Ctl("dot=addr")
+	q0, q1, _ := w.ReadAddr()
+	log.Printf("refreshWindow: after write, dot is at q0=%d q1=%d", q0, q1)
 	w.Ctl("show")
 }
 
@@ -508,7 +524,9 @@ func refreshWindowWithDefaults(w *acme.Win) {
 		return
 	}
 	metadata.Sort(rs, metadata.SortById, metadata.SortOrderDesc)
+	log.Printf("refreshWindowWithDefaults: about to refresh with %d results", len(rs))
 	refreshWindow(w, rs)
+	log.Printf("refreshWindowWithDefaults: refresh complete")
 }
 
 // parseArgs parses space-separated arguments, handling quoted strings
