@@ -31,7 +31,8 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 		}
 	}
 
-	if SupportsFrontMatter(path) {
+	// Only update frontmatter if file exists (skip if not yet created via Put)
+	if _, err := os.Stat(path); err == nil && SupportsFrontMatter(path) {
 		ext := strings.ToLower(filepath.Ext(path))
 		var fileType string
 		switch ext {
@@ -107,36 +108,6 @@ func HandleRenameEvent(f *client.Fsys, identifier, denoteDir string) error {
 		}
 	}
 
-	return nil
-}
-
-// HandleNewEvent handles 'n' events from the 9P server.
-// When a new note is created in 9P, create the file on the filesystem.
-func HandleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
-	fields, err := p9client.ReadFields(f, identifier, "title", "keywords")
-	if err != nil {
-		return fmt.Errorf("failed to get metadata: %w", err)
-	}
-	title := fields["title"]
-	var tags []string
-	if keywords, ok := fields["keywords"]; ok && keywords != "" {
-		tags = strings.Split(keywords, ",")
-		for i := range tags {
-			tags[i] = strings.TrimSpace(tags[i])
-		}
-	}
-
-	path, content := metadata.GenerateNote(denoteDir, title, tags, "md-yaml")
-
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to create note file: %w", err)
-	}
-
-	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
-		return fmt.Errorf("failed to update path in metadata: %w", err)
-	}
-
-	log.Printf("created new note: %s at %s", identifier, path)
 	return nil
 }
 

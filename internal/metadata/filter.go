@@ -72,7 +72,7 @@ func NewFilter(arg string) (*Filter, error) {
 		pattern = regexp.QuoteMeta(pattern)
 	}
 
-	re, err := regexp.Compile(pattern)
+	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regex: %v", err)
 	}

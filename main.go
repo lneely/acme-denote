@@ -104,7 +104,7 @@ func eventListener() {
 						log.Printf("error handling rename for %s: %v", identifier, err)
 					}
 				case "n":
-					if err := sync.HandleNewEvent(f, identifier, denoteDir); err != nil {
+					if err := handleNewEvent(f, identifier, denoteDir); err != nil {
 						log.Printf("error handling new for %s: %v", identifier, err)
 					}
 				case "d":
@@ -120,6 +120,66 @@ func eventListener() {
 			time.Sleep(time.Second)
 		}
 	}
+}
+
+// handleNewEvent handles 'n' events from the 9P server.
+// When a new note is created in 9P, open an acme window (file created on Put).
+func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
+	fields, err := p9client.ReadFields(f, identifier, "title", "keywords")
+	if err != nil {
+		return fmt.Errorf("failed to get metadata: %w", err)
+	}
+	title := fields["title"]
+	var tags []string
+	if keywords, ok := fields["keywords"]; ok && keywords != "" {
+		tags = strings.Split(keywords, ",")
+		for i := range tags {
+			tags[i] = strings.TrimSpace(tags[i])
+		}
+	}
+
+	path, content := metadata.GenerateNote(denoteDir, title, tags, ftype)
+
+	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
+		return fmt.Errorf("failed to update path in metadata: %w", err)
+	}
+
+	// Check if file already exists (CryptPut or manual creation case)
+	if _, err := os.Stat(path); err == nil {
+		log.Printf("registered existing note: %s at %s", identifier, path)
+		return nil
+	}
+
+	// Open acme window with initial content (file will be created on Put)
+	var win *acme.Win
+	if win = acme.Show(path); win == nil {
+		if win, err = acme.New(); err != nil {
+			return fmt.Errorf("failed to create window: %w", err)
+		}
+		if err = win.Name(path); err != nil {
+			win.Del(true)
+			return fmt.Errorf("failed to set window name: %w", err)
+		}
+	}
+
+	if err := win.Addr("0"); err != nil {
+		log.Printf("failed to seek: %v", err)
+		win.Del(true)
+		return fmt.Errorf("failed to seek: %w", err)
+	}
+	if _, err := win.Write("data", []byte(content)); err != nil {
+		log.Printf("failed to write content: %v", err)
+		win.Del(true)
+		return fmt.Errorf("failed to write content: %w", err)
+	}
+
+	win.Ctl("dirty")
+	win.Addr("$")
+	win.Ctl("dot=addr")
+	win.Ctl("show")
+
+	log.Printf("opened new note window: %s at %s", identifier, path)
+	return nil
 }
 
 func main() {
@@ -298,73 +358,12 @@ func main() {
 					break
 				}
 
-				// Parse title and tags from input: 'title' tag1,tag2
-				if !strings.HasPrefix(input, "'") {
-					log.Printf("New: title must be single-quoted")
-					break
+				// Write to 9p (triggers 'n' event which opens window)
+				if err := p9client.With9P(func(f *client.Fsys) error {
+					return p9client.WriteFile(f, "new", input)
+				}); err != nil {
+					log.Printf("New: failed to create note: %v", err)
 				}
-
-				closeQuote := strings.Index(input[1:], "'")
-				if closeQuote == -1 {
-					log.Printf("New: title must be single-quoted (missing closing quote)")
-					break
-				}
-
-				title := input[1 : closeQuote+1]
-				if title == "" {
-					log.Printf("New: title cannot be empty")
-					break
-				}
-
-				// Extract tags (everything after closing quote)
-				remainder := strings.TrimSpace(input[closeQuote+2:])
-				var tags []string
-				if remainder != "" {
-					// Validate tags
-					tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
-					if !tagPattern.MatchString(remainder) {
-						log.Printf("New: tags must be comma-delimited lowercase unicode words (no spaces)")
-						break
-					}
-					tags = strings.Split(remainder, ",")
-				}
-
-				// Generate filename and content
-				fullPath, content := metadata.GenerateNote(denoteDir, title, tags, ftype)
-
-				// Create new Acme window
-				var newWin *acme.Win
-				if newWin = acme.Show(fullPath); newWin == nil {
-					if newWin, err = acme.New(); err != nil {
-						log.Printf("New: failed to create window: %v", err)
-						break
-					}
-					if err = newWin.Name(fullPath); err != nil {
-						newWin.Del(true)
-						log.Printf("New: failed to set window name: %v", err)
-						break
-					}
-				}
-
-				// Write content to window
-				if err := newWin.Addr("0"); err != nil {
-					log.Printf("New: failed to seek: %v", err)
-					newWin.Del(true)
-					break
-				}
-				if _, err := newWin.Write("data", []byte(content)); err != nil {
-					log.Printf("New: failed to write content: %v", err)
-					newWin.Del(true)
-					break
-				}
-
-				newWin.Ctl("dirty")
-				newWin.Addr("$")
-				newWin.Ctl("dot=addr")
-				newWin.Ctl("show")
-
-				// Start event listener for this note window
-				go watchNoteWindow(newWin, fullPath)
 			case "Remove":
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
