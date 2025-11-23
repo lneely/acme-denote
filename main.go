@@ -503,7 +503,6 @@ func performSearch(w *acme.Win, searchText string) {
 func refreshWindow(w *acme.Win, rs metadata.Results) {
 	w.Addr(",")
 	w.Write("data", rs.Bytes())
-	q0, q1, _ := w.ReadAddr()
 	w.Ctl("show")
 }
 
