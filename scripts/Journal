@@ -1,0 +1,35 @@
+#!/usr/local/plan9/bin/rc
+
+# Get formatted date (e.g., "Wednesday 12 November 2025 22:11")
+datefull=`{date | awk '
+BEGIN {
+    m["Jan"]="January"; m["Feb"]="February"; m["Mar"]="March"
+    m["Apr"]="April"; m["May"]="May"; m["Jun"]="June"
+    m["Jul"]="July"; m["Aug"]="August"; m["Sep"]="September"
+    m["Oct"]="October"; m["Nov"]="November"; m["Dec"]="December"
+    d["Sun"]="Sunday"; d["Mon"]="Monday"; d["Tue"]="Tuesday"
+    d["Wed"]="Wednesday"; d["Thu"]="Thursday"; d["Fri"]="Friday"
+    d["Sat"]="Saturday"
+}
+{
+    split($4, t, ":")
+    print d[$1], $3, m[$2], $6, t[1]":"t[2]
+}'}
+
+# Extract date-only part (remove time) and convert to lowercase
+dateonly=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
+
+# Apply filter
+echo 'filter title:'''$"dateonly'''' | 9p write denote/ctl
+
+# Check if there are any results
+results=`{9p read denote/index}
+
+# If no results, create new journal entry
+if(~ $#results 0) {
+    echo ''''$"datefull''' journal' | 9p write denote/new
+}
+if not Denote 'denote:'$results(1)
+
+# Clear filter
+echo 'filter' | 9p write denote/ctl
