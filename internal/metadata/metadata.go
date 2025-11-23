@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Metadata is the metadata encoded into Denote-style
@@ -185,4 +186,41 @@ func ExtractTitleFromContent(content string, ext string) string {
 	}
 
 	return ""
+}
+
+// GenerateIdentifier creates a new identifier timestamp.
+func GenerateIdentifier() string {
+	return time.Now().Format("20060102T150405")
+}
+
+// slugifyTitle converts a title to a filesystem-safe slug.
+func slugifyTitle(title string) string {
+	slug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	return regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(slug, "")
+}
+
+// formatKeywords formats keywords for a denote filename.
+func formatKeywords(keywords []string) string {
+	if len(keywords) == 0 {
+		return ""
+	}
+	return "__" + strings.Join(keywords, "_")
+}
+
+// BuildFilename constructs a denote filename from metadata components.
+func BuildFilename(identifier, title string, keywords []string, ext string) string {
+	titleSlug := slugifyTitle(title)
+	keywordsPart := formatKeywords(keywords)
+	return fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+}
+
+// GenerateNote creates a new note with generated identifier and content.
+// Returns (path, content).
+func GenerateNote(dir, title string, keywords []string, fileType string) (string, string) {
+	identifier := GenerateIdentifier()
+	ext := FileExtensions[fileType]
+	filename := BuildFilename(identifier, title, keywords, ext)
+	path := filepath.Join(dir, filename)
+	content := Generate(title, keywords, fileType, identifier)
+	return path, content
 }

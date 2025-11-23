@@ -27,56 +27,6 @@ const (
 
 var denoteDir = os.Getenv("HOME") + "/doc"
 
-// Helper functions for denote filename generation
-
-func generateIdentifier() string {
-	return time.Now().Format("20060102T150405")
-}
-
-func slugifyTitle(title string) string {
-	slug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
-	return regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(slug, "")
-}
-
-func formatKeywords(keywords []string) string {
-	if len(keywords) == 0 {
-		return ""
-	}
-	return "__" + strings.Join(keywords, "_")
-}
-
-func buildDenoteFilename(identifier, title string, keywords []string, ext string) string {
-	titleSlug := slugifyTitle(title)
-	keywordsPart := formatKeywords(keywords)
-	return fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
-}
-
-func generateNotePath(dir, title string, keywords []string, fileType string) (string, string) {
-	identifier := generateIdentifier()
-	ext := metadata.FileExtensions[fileType]
-	filename := buildDenoteFilename(identifier, title, keywords, ext)
-	path := filepath.Join(dir, filename)
-	content := metadata.Generate(title, keywords, fileType, identifier)
-	return path, content
-}
-
-func renameNote(oldPath, title string, keywords []string, identifier string) (string, error) {
-	if identifier == "" {
-		identifier = generateIdentifier()
-	}
-
-	ext := filepath.Ext(oldPath)
-	dir := filepath.Dir(oldPath)
-	filename := buildDenoteFilename(identifier, title, keywords, ext)
-	newPath := filepath.Join(dir, filename)
-
-	if err := os.Rename(oldPath, newPath); err != nil {
-		return "", err
-	}
-
-	return newPath, nil
-}
-
 // Helper functions for 9P operations
 
 // readIndex reads and parses the index from 9P server.
@@ -146,19 +96,19 @@ func eventListener() {
 
 				switch action {
 				case "u":
-					if err := handleUpdateEvent(f, identifier); err != nil {
+					if err := sync.HandleUpdateEvent(f, identifier, denoteDir); err != nil {
 						log.Printf("error handling update for %s: %v", identifier, err)
 					}
 				case "r":
-					if err := handleRenameEvent(f, identifier); err != nil {
+					if err := sync.HandleRenameEvent(f, identifier, denoteDir); err != nil {
 						log.Printf("error handling rename for %s: %v", identifier, err)
 					}
 				case "n":
-					if err := handleNewEvent(f, identifier); err != nil {
+					if err := sync.HandleNewEvent(f, identifier, denoteDir); err != nil {
 						log.Printf("error handling new for %s: %v", identifier, err)
 					}
 				case "d":
-					if err := handleDeleteEvent(identifier); err != nil {
+					if err := sync.HandleDeleteEvent(identifier, denoteDir); err != nil {
 						log.Printf("error handling delete for %s: %v", identifier, err)
 					}
 				}
@@ -172,150 +122,6 @@ func eventListener() {
 	}
 }
 
-func handleUpdateEvent(f *client.Fsys, identifier string) error {
-	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "path")
-	if err != nil {
-		return err
-	}
-
-	title := fields["title"]
-	keywords := fields["keywords"]
-	path := fields["path"]
-
-	var tags []string
-	if keywords != "" {
-		for _, tag := range strings.Split(keywords, ",") {
-			tags = append(tags, strings.TrimSpace(tag))
-		}
-	}
-
-	if sync.SupportsFrontMatter(path) {
-		ext := strings.ToLower(filepath.Ext(path))
-		var fileType string
-		switch ext {
-		case ".org":
-			fileType = "org"
-		case ".md":
-			fileType = "md-yaml"
-		case ".txt":
-			fileType = "txt"
-		}
-
-		fm := &metadata.FrontMatter{
-			Title:      title,
-			Tags:       tags,
-			Identifier: identifier,
-			FileType:   fileType,
-		}
-
-		if err := sync.UpdateFrontMatter(path, fm); err != nil {
-			log.Printf("failed to update front matter for %s: %v", identifier, err)
-		}
-	}
-
-	// After updating content, check if a rename is needed
-	ext := strings.ToLower(filepath.Ext(strings.TrimSuffix(path, ".gpg")))
-	dir := filepath.Dir(path)
-	if dir == "." {
-		dir = denoteDir
-	}
-	filename := buildDenoteFilename(identifier, title, tags, ext)
-	newPath := filepath.Join(dir, filename)
-
-	if newPath != path {
-		if err := p9client.WriteFile(f, "n/"+identifier+"/path", newPath); err != nil {
-			return fmt.Errorf("failed to update path in 9p: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func handleRenameEvent(f *client.Fsys, identifier string) error {
-	// Get new path from 9P server.
-	newPath, err := p9client.ReadFile(f, "n/"+identifier+"/path")
-	if err != nil {
-		return fmt.Errorf("failed to read path: %w", err)
-	}
-
-	if newPath == "" {
-		// Path is not set yet. This can happen during note creation.
-		return nil
-	}
-
-	// Find old file on disk.
-	pattern := filepath.Join(denoteDir, identifier+"--*")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return fmt.Errorf("failed to find file: %w", err)
-	}
-
-	if len(matches) == 0 {
-		// File doesn't exist on disk. Nothing to rename.
-		return nil
-	}
-	oldPath := matches[0]
-
-	// Rename if different.
-	if oldPath != newPath {
-		if err := os.Rename(oldPath, newPath); err != nil {
-			return fmt.Errorf("failed to rename file from %s to %s: %w", oldPath, newPath, err)
-		}
-	}
-
-	return nil
-}
-
-func handleNewEvent(f *client.Fsys, identifier string) error {
-	fields, err := p9client.ReadFields(f, identifier, "title", "keywords")
-	if err != nil {
-		return fmt.Errorf("failed to get metadata: %w", err)
-	}
-	title := fields["title"]
-	var tags []string
-	if keywords, ok := fields["keywords"]; ok && keywords != "" {
-		tags = strings.Split(keywords, ",")
-		for i := range tags {
-			tags[i] = strings.TrimSpace(tags[i])
-		}
-	}
-
-	path, content := generateNotePath(denoteDir, title, tags, "md-yaml")
-
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to create note file: %w", err)
-	}
-
-	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
-		return fmt.Errorf("failed to update path in metadata: %w", err)
-	}
-
-	log.Printf("created new note: %s at %s", identifier, path)
-	return nil
-}
-
-func handleDeleteEvent(identifier string) error {
-	pattern := filepath.Join(denoteDir, identifier+"--*")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return fmt.Errorf("failed to find file: %w", err)
-	}
-
-	if len(matches) == 0 {
-		return fmt.Errorf("no file found matching identifier: %s", identifier)
-	}
-
-	if len(matches) > 1 {
-		log.Printf("warning: multiple files match identifier %s, deleting first: %s", identifier, matches[0])
-	}
-
-	if err := os.Remove(matches[0]); err != nil {
-		return fmt.Errorf("failed to delete file: %w", err)
-	}
-
-	log.Printf("deleted note: %s", matches[0])
-	return nil
-}
 
 func main() {
 	var err error
@@ -509,7 +315,7 @@ func main() {
 				}
 
 				// Generate filename and content
-				fullPath, content := generateNotePath(denoteDir, title, tags, "md-yaml")
+				fullPath, content := metadata.GenerateNote(denoteDir, title, tags, "md-yaml")
 
 				// Create new Acme window
 				var newWin *acme.Win
