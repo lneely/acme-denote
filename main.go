@@ -251,16 +251,17 @@ func main() {
 					event := strings.TrimSpace(string(buf[:n]))
 					parts := strings.Fields(event)
 					if len(parts) >= 2 {
-						if parts[1] == "n" {
+						switch parts[1] {
+						case "n":
 							// New note: scroll to top to show it
 							refreshWindowWithDefaults(w)
 							w.Addr("#0")
 							w.Ctl("dot=addr")
 							w.Ctl("show")
-						} else if parts[1] == "d" {
+						case "d":
 							// Delete: preserve current position
 							w.Ctl("addr=dot")
-							q0, q1, err := w.ReadAddr()
+							q0, q1, _ := w.ReadAddr()
 
 							refreshWindowWithDefaults(w)
 
@@ -329,7 +330,7 @@ func main() {
 				}
 
 				// Generate filename and content
-				fullPath, content := metadata.GenerateNote(denoteDir, title, tags, "md-yaml")
+				fullPath, content := metadata.GenerateNote(denoteDir, title, tags, ftype)
 
 				// Create new Acme window
 				var newWin *acme.Win
@@ -500,11 +501,9 @@ func performSearch(w *acme.Win, searchText string) {
 }
 
 func refreshWindow(w *acme.Win, rs metadata.Results) {
-	log.Printf("refreshWindow: clearing and writing %d bytes", len(rs.Bytes()))
 	w.Addr(",")
 	w.Write("data", rs.Bytes())
 	q0, q1, _ := w.ReadAddr()
-	log.Printf("refreshWindow: after write, dot is at q0=%d q1=%d", q0, q1)
 	w.Ctl("show")
 }
 
