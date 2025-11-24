@@ -105,7 +105,6 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 
 	// Check if file already exists (CryptPut or manual creation case)
 	if _, err := os.Stat(path); err == nil {
-		log.Printf("registered existing note: %s at %s", identifier, path)
 		return nil
 	}
 
@@ -122,12 +121,10 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 
 	if err := win.Addr("0"); err != nil {
-		log.Printf("failed to seek: %v", err)
 		win.Del(true)
 		return fmt.Errorf("failed to seek: %w", err)
 	}
 	if _, err := win.Write("data", []byte(content)); err != nil {
-		log.Printf("failed to write content: %v", err)
 		win.Del(true)
 		return fmt.Errorf("failed to write content: %w", err)
 	}
@@ -140,7 +137,6 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	// Start event watcher for CryptPut detection
 	go watchNoteWindow(win, path)
 
-	log.Printf("opened new note window: %s at %s", identifier, path)
 	return nil
 }
 
@@ -283,7 +279,6 @@ func main() {
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
 				if input == "" {
-					log.Printf("New: no input provided")
 					break
 				}
 
@@ -291,7 +286,7 @@ func main() {
 				if err := p9client.With9P(func(f *client.Fsys) error {
 					return p9client.WriteFile(f, "new", input)
 				}); err != nil {
-					log.Printf("New: failed to create note: %v", err)
+					log.Printf("failed to create note: %v", err)
 				}
 
 				// Refresh window and scroll to top to show new note
@@ -303,7 +298,6 @@ func main() {
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
 				if input == "" {
-					log.Printf("Remove: no input provided")
 					break
 				}
 
@@ -320,7 +314,6 @@ func main() {
 
 				// Refresh window and restore position
 				refreshWindowWithDefaults(w)
-				log.Printf("delete: restoring position to #%d,#%d", q0, q1)
 				w.Addr("#%d,#%d", q0, q1)
 				w.Ctl("dot=addr")
 				w.Ctl("show")
@@ -476,9 +469,7 @@ func refreshWindowWithDefaults(w *acme.Win) {
 		return
 	}
 	metadata.Sort(rs, metadata.SortById, metadata.SortOrderDesc)
-	log.Printf("refreshWindowWithDefaults: about to refresh with %d results", len(rs))
 	refreshWindow(w, rs)
-	log.Printf("refreshWindowWithDefaults: refresh complete")
 }
 
 // parseArgs parses space-separated arguments, handling quoted strings
@@ -596,7 +587,6 @@ func watchNoteWindow(win *acme.Win, path string) {
 				if len(matches) >= 2 {
 					identifier := matches[1]
 					encryptedPath := path + ".gpg"
-					log.Printf("CryptPut detected, updating path %s -> %s", path, encryptedPath)
 					p9client.With9P(func(f *client.Fsys) error {
 						return p9client.WriteFile(f, "n/"+identifier+"/path", encryptedPath)
 					})

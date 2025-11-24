@@ -144,7 +144,6 @@ func HandleDeleteEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 
 	if len(matches) == 0 {
-		log.Printf("no file found for %s, metadata already cleaned", identifier)
 		return nil
 	}
 
@@ -156,6 +155,5 @@ func HandleDeleteEvent(f *client.Fsys, identifier, denoteDir string) error {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 
-	log.Printf("deleted note: %s", matches[0])
 	return nil
 }

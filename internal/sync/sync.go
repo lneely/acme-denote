@@ -240,8 +240,7 @@ func SyncAll() error {
 					path = actualPath
 				} else {
 					// No file on disk - skip syncing (leave metadata as-is)
-					log.Printf("sync: no file found for %s, skipping", identifier)
-					continue
+						continue
 				}
 			}
 
