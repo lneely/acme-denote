@@ -239,8 +239,11 @@ func SyncAll() error {
 					// Continue to sync the file content
 					path = actualPath
 				} else {
-					// No file on disk - skip syncing (leave metadata as-is)
-						continue
+					// No file on disk - delete metadata (filesystem is source of truth)
+					if err := p9client.WriteFile(f, "n/"+identifier+"/ctl", "d"); err != nil {
+						log.Printf("sync: failed to delete metadata for %s: %v", identifier, err)
+					}
+					continue
 				}
 			}
 
