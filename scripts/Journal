@@ -1,7 +1,36 @@
 #!/usr/local/plan9/bin/rc
 
+# Parse time offset argument (e.g., +2d, -3h, +15m)
+offset=0
+if(! ~ $#* 0) {
+	arg=$1
+	# Extract components using awk
+	sign=`{echo $arg | awk '{print substr($0,1,1)}'}
+	num=`{echo $arg | awk '{s=substr($0,2); sub(/[a-z]$/,"",s); print s}'}
+	unit=`{echo $arg | awk '{print substr($0,length($0))}'}
+
+	# Calculate offset in seconds
+	switch($unit) {
+	case d
+		offset=`{hoc -e 'int('$num' * 86400)'}
+	case h
+		offset=`{hoc -e 'int('$num' * 3600)'}
+	case m
+		offset=`{hoc -e 'int('$num' * 60)'}
+	}
+
+	# Apply sign
+	if(~ $sign '-') {
+		offset=`{hoc -e 'int(-1 * '$offset')'}
+	}
+}
+
+# Calculate target timestamp
+epoch=`{date -n}
+targetepoch=`{hoc -e 'int('$epoch' + '$offset')'}
+
 # Get formatted date (e.g., "Wednesday 12 November 2025 22:11")
-datefull=`{date | awk '
+datefull=`{date $targetepoch | awk '
 BEGIN {
     m["Jan"]="January"; m["Feb"]="February"; m["Mar"]="March"
     m["Apr"]="April"; m["May"]="May"; m["Jun"]="June"
@@ -19,8 +48,13 @@ BEGIN {
 # Extract date-only part (remove time) and convert to lowercase
 dateonly=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
 
-# Apply filter
-echo 'filter title:'''$"dateonly'''' | 9p write denote/ctl
+# Apply filter - use full datetime if offset arg provided, date-only otherwise
+if(! ~ $#* 0) {
+	# With offset: filter by full datetime for precise matching
+	filterdate=`{echo $datefull | awk '{print tolower($0)}'}
+	echo 'filter title:'''$"filterdate'''' | 9p write denote/ctl
+}
+if not echo 'filter title:'''$"dateonly'''' | 9p write denote/ctl
 
 # Check if there are any results
 results=`{9p read denote/index}
