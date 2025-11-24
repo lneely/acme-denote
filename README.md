@@ -1,6 +1,8 @@
 # acme-denote
 
-An implementation of prot's denote for Acme. Creates and manage notes with automatic metadata, tagging, and search.
+> (Denote) is based on the idea that notes should follow a predictable and descriptive file-naming scheme. The file name must offer a clear indication of what the note is about, without reference to any other metadata. Denote basically streamlines the creation of such files while providing facilities to link between them.
+
+The goal of this program is to provide an implementation of prot's [denote](https://github.com/protesilaos/denote) for Acme.
 
 ## Quick Start
 
