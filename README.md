@@ -6,6 +6,8 @@ The goal of this program is to provide an implementation of prot's [denote](http
 
 ## Quick Start
 
+This README assumes you already have [plan9port](https://github.com/9fans/plan9port) installed.
+
 ### Install
 ```sh
 mk install
