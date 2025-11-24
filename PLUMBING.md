@@ -4,7 +4,7 @@ This document describes how to integrate the Denote command with the Plan 9 plum
 
 ## Overview
 
-The plumbing rules allow you to right-click on `denote:<identifier>` text in acme and have it automatically open the corresponding note.
+The plumbing rules allow you to right-click on `denote:<identifier>` text in acme, or on `<identifier>` in the `/Denote/` window, and have it automatically open the corresponding note.
 
 ## Denote Rule
 
