@@ -27,7 +27,7 @@ results=`{9p read denote/index}
 
 # If no results, create new journal entry
 if(~ $#results 0) {
-    echo ''''$"datefull''' journal' | 9p write denote/new
+    echo '''journal/:'$"datefull''' journal' | 9p write denote/new
 }
 if not Denote 'denote:'$results(1)
 

@@ -12,11 +12,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 	"unicode"
 
 	"9fans.net/go/acme"
-	"9fans.net/go/plan9"
 	"9fans.net/go/plan9/client"
 )
 
@@ -65,64 +63,7 @@ func setFilter(f *client.Fsys, filterQuery string) error {
 
 // Event handling
 
-func eventListener() {
-	for {
-		err := p9client.With9P(func(f *client.Fsys) error {
-			fid, err := f.Open("event", plan9.OREAD)
-			if err != nil {
-				return fmt.Errorf("failed to open event file: %w", err)
-			}
-			defer fid.Close()
-
-			buf := make([]byte, 8192)
-			for {
-				n, err := fid.Read(buf)
-				if err != nil {
-					return fmt.Errorf("failed to read event: %w", err)
-				}
-				if n == 0 {
-					continue
-				}
-
-				event := strings.TrimSpace(string(buf[:n]))
-				parts := strings.Fields(event)
-				if len(parts) != 2 {
-					log.Printf("invalid event format: %s", event)
-					continue
-				}
-
-				identifier := parts[0]
-				action := parts[1]
-
-				switch action {
-				case "u":
-					if err := sync.HandleUpdateEvent(f, identifier, denoteDir); err != nil {
-						log.Printf("error handling update for %s: %v", identifier, err)
-					}
-				case "r":
-					if err := sync.HandleRenameEvent(f, identifier, denoteDir); err != nil {
-						log.Printf("error handling rename for %s: %v", identifier, err)
-					}
-				case "n":
-					if err := handleNewEvent(f, identifier, denoteDir); err != nil {
-						log.Printf("error handling new for %s: %v", identifier, err)
-					}
-				case "d":
-					if err := sync.HandleDeleteEvent(identifier, denoteDir); err != nil {
-						log.Printf("error handling delete for %s: %v", identifier, err)
-					}
-				}
-			}
-		})
-
-		if err != nil {
-			log.Printf("event consumer error: %v", err)
-			time.Sleep(time.Second)
-		}
-	}
-}
-
-// handleNewEvent handles 'n' events from the 9P server.
+// handleNewEvent is called when a new note is created.
 // When a new note is created in 9P, open an acme window (file created on Put).
 func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	fields, err := p9client.ReadFields(f, identifier, "title", "keywords")
@@ -138,7 +79,25 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 		}
 	}
 
-	path, content := metadata.GenerateNote(denoteDir, title, tags, ftype)
+	// Parse subdirectory from title if using '/:' separator
+	targetDir := denoteDir
+	if idx := strings.Index(title, "/:"); idx != -1 {
+		subdir := title[:idx+1] // Include trailing slash
+		title = title[idx+2:]   // Skip past '/:'
+		targetDir = filepath.Join(denoteDir, subdir)
+
+		// Create subdirectory if it doesn't exist
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", targetDir, err)
+		}
+
+		// Update metadata with cleaned title
+		if err := p9client.WriteFile(f, "n/"+identifier+"/title", title); err != nil {
+			return fmt.Errorf("failed to update title in metadata: %w", err)
+		}
+	}
+
+	path, content := metadata.GenerateNote(targetDir, title, tags, ftype)
 
 	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
 		return fmt.Errorf("failed to update path in metadata: %w", err)
@@ -177,6 +136,9 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	win.Addr("$")
 	win.Ctl("dot=addr")
 	win.Ctl("show")
+
+	// Start event watcher for CryptPut detection
+	go watchNoteWindow(win, path)
 
 	log.Printf("opened new note window: %s at %s", identifier, path)
 	return nil
@@ -242,13 +204,34 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: failed to load notes: %v\n", err)
 	}
 
-	// 9p server startup with pre-loaded data
-	if err := p9server.StartServer(notes); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to start fileserver: %v\n", err)
+	// Setup callbacks for note operations
+	callbacks := p9server.Callbacks{
+		OnNew: func(identifier string) error {
+			return p9client.With9P(func(f *client.Fsys) error {
+				return handleNewEvent(f, identifier, denoteDir)
+			})
+		},
+		OnUpdate: func(identifier string) error {
+			return p9client.With9P(func(f *client.Fsys) error {
+				return sync.HandleUpdateEvent(f, identifier, denoteDir)
+			})
+		},
+		OnRename: func(identifier string) error {
+			return p9client.With9P(func(f *client.Fsys) error {
+				return sync.HandleRenameEvent(f, identifier, denoteDir)
+			})
+		},
+		OnDelete: func(identifier string) error {
+			return p9client.With9P(func(f *client.Fsys) error {
+				return sync.HandleDeleteEvent(f, identifier, denoteDir)
+			})
+		},
 	}
 
-	// start event consumer
-	go eventListener()
+	// 9p server startup with pre-loaded data and callbacks
+	if err := p9server.StartServer(notes, callbacks); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to start fileserver: %v\n", err)
+	}
 
 	// start acme log watcher
 	go sync.WatchAcmeLog()
@@ -286,60 +269,6 @@ func main() {
 	metadata.Sort(rs, metadata.SortById, metadata.SortOrderDesc)
 	refreshWindow(w, rs)
 
-	// listen for 'n' events to refresh window
-	go func() {
-		for {
-			err := p9client.With9P(func(f *client.Fsys) error {
-				// Open event file (blocking reads)
-				fid, err := f.Open("event", plan9.OREAD)
-				if err != nil {
-					return fmt.Errorf("failed to open event file: %w", err)
-				}
-				defer fid.Close()
-
-				// Read events in loop
-				buf := make([]byte, 8192)
-				for {
-					n, err := fid.Read(buf)
-					if err != nil {
-						return fmt.Errorf("failed to read event: %w", err)
-					}
-					if n == 0 {
-						continue
-					}
-
-					event := strings.TrimSpace(string(buf[:n]))
-					parts := strings.Fields(event)
-					if len(parts) >= 2 {
-						switch parts[1] {
-						case "n":
-							// New note: scroll to top to show it
-							refreshWindowWithDefaults(w)
-							w.Addr("#0")
-							w.Ctl("dot=addr")
-							w.Ctl("show")
-						case "d":
-							// Delete: preserve current position
-							w.Ctl("addr=dot")
-							q0, q1, _ := w.ReadAddr()
-
-							refreshWindowWithDefaults(w)
-
-							log.Printf("delete event: restoring position to #%d,#%d", q0, q1)
-							w.Addr("#%d,#%d", q0, q1)
-							w.Ctl("dot=addr")
-							w.Ctl("show")
-						}
-					}
-				}
-			})
-
-			if err != nil {
-				log.Printf("window event listener error: %v", err)
-			}
-		}
-	}()
-
 	w.Ctl("clean")
 	w.Addr("#0")
 	w.Ctl("dot=addr")
@@ -358,12 +287,18 @@ func main() {
 					break
 				}
 
-				// Write to 9p (triggers 'n' event which opens window)
+				// Write to 9p (triggers callback which opens window)
 				if err := p9client.With9P(func(f *client.Fsys) error {
 					return p9client.WriteFile(f, "new", input)
 				}); err != nil {
 					log.Printf("New: failed to create note: %v", err)
 				}
+
+				// Refresh window and scroll to top to show new note
+				refreshWindowWithDefaults(w)
+				w.Addr("#0")
+				w.Ctl("dot=addr")
+				w.Ctl("show")
 			case "Remove":
 				// Read chorded argument
 				input := strings.TrimSpace(string(e.Arg))
@@ -372,21 +307,42 @@ func main() {
 					break
 				}
 
+				// Preserve current position for restoring after refresh
+				w.Ctl("addr=dot")
+				q0, q1, _ := w.ReadAddr()
+
 				// Write to denote/n/<identifier>/ctl via 9P
 				if err := p9client.With9P(func(f *client.Fsys) error {
 					return p9client.WriteFile(f, filepath.Join("n", input, "ctl"), "d")
 				}); err != nil {
 					log.Printf("failed to delete file: %v", err)
 				}
+
+				// Refresh window and restore position
+				refreshWindowWithDefaults(w)
+				log.Printf("delete: restoring position to #%d,#%d", q0, q1)
+				w.Addr("#%d,#%d", q0, q1)
+				w.Ctl("dot=addr")
+				w.Ctl("show")
 			case "Reset":
 				refreshWindowWithDefaults(w)
+				w.Addr("#0")
+				w.Ctl("dot=addr")
+				w.Ctl("show")
 			case "Look":
 				// Use e.Arg for the search arguments
 				performSearch(w, string(e.Arg))
+				w.Addr("#0")
+				w.Ctl("dot=addr")
+				w.Ctl("show")
 			case "Sync":
 				if err := sync.SyncAll(); err != nil {
 					log.Printf("sync error: %v", err)
 				}
+				refreshWindowWithDefaults(w)
+				w.Addr("#0")
+				w.Ctl("dot=addr")
+				w.Ctl("show")
 			case "Put":
 				body, err := w.ReadAll("body")
 				if err != nil {
@@ -620,6 +576,7 @@ func applyIndexChanges(f *client.Fsys, current, updated metadata.Results) error 
 }
 
 var identifierPattern = regexp.MustCompile(`^\d{8}T\d{6}$`)
+var denoteFilePattern = regexp.MustCompile(`^(\d{8}T\d{6})--`)
 
 func isIdentifier(s string) bool {
 	return identifierPattern.MatchString(s)
@@ -631,26 +588,26 @@ func watchNoteWindow(win *acme.Win, path string) {
 	for e := range win.EventChan() {
 		switch e.C2 {
 		case 'x', 'X':
-			// get metadata and emit 'n' event on CryptPut
+			// Update metadata path when CryptPut is used
 			if string(e.Text) == "CryptPut" {
-				win.WriteEvent(e)
-
-				encryptedPath := path + ".gpg"
-				meta := metadata.ParseFilename(encryptedPath)
-
-				var newInput string
-				if len(meta.Tags) > 0 {
-					newInput = fmt.Sprintf("'%s' %s", meta.Title, strings.Join(meta.Tags, ","))
-				} else {
-					newInput = fmt.Sprintf("'%s'", meta.Title)
+				// Extract identifier from path
+				filename := filepath.Base(path)
+				matches := denoteFilePattern.FindStringSubmatch(filename)
+				if len(matches) >= 2 {
+					identifier := matches[1]
+					encryptedPath := path + ".gpg"
+					log.Printf("CryptPut detected, updating path %s -> %s", path, encryptedPath)
+					p9client.With9P(func(f *client.Fsys) error {
+						return p9client.WriteFile(f, "n/"+identifier+"/path", encryptedPath)
+					})
 				}
 
-				p9client.With9P(func(f *client.Fsys) error {
-					return p9client.WriteFile(f, "new", newInput)
-				})
+				win.WriteEvent(e)
 			} else {
 				win.WriteEvent(e)
 			}
+		default:
+			win.WriteEvent(e)
 		}
 	}
 }

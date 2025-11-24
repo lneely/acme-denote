@@ -219,11 +219,30 @@ func SyncAll() error {
 
 			// Check if file exists on filesystem
 			if _, err := os.Stat(path); os.IsNotExist(err) {
-				// File was deleted, emit 'd' event to clean up metadata
-				if err := p9client.WriteFile(f, "n/"+identifier+"/ctl", "d"); err != nil {
-					log.Printf("sync: failed to emit delete event for %s: %v", identifier, err)
+				// Path in metadata doesn't exist - search for actual file on disk
+				// Use the directory from the metadata path (handles subdirs like journal/)
+				dir := filepath.Dir(path)
+				pattern := filepath.Join(dir, identifier+"--*")
+				matches, err := filepath.Glob(pattern)
+				if err != nil {
+					log.Printf("sync: failed to glob for %s: %v", identifier, err)
+					continue
 				}
-				continue
+
+				if len(matches) > 0 {
+					// File exists (maybe encrypted or renamed), update metadata path
+					actualPath := matches[0]
+					if err := p9client.WriteFile(f, "n/"+identifier+"/path", actualPath); err != nil {
+						log.Printf("sync: failed to update path for %s: %v", identifier, err)
+						continue
+					}
+					// Continue to sync the file content
+					path = actualPath
+				} else {
+					// No file on disk - skip syncing (leave metadata as-is)
+					log.Printf("sync: no file found for %s, skipping", identifier)
+					continue
+				}
 			}
 
 			// Route to appropriate sync function based on file type

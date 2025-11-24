@@ -57,12 +57,22 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 
 	// After updating content, check if a rename is needed
-	ext := strings.ToLower(filepath.Ext(strings.TrimSuffix(path, ".gpg")))
+	// Extract the FULL extension from original path (preserves .gpg, .txt.gpg, etc.)
 	dir := filepath.Dir(path)
 	if dir == "." {
 		dir = denoteDir
 	}
-	filename := metadata.BuildFilename(identifier, title, tags, ext)
+
+	// Get original filename and extract extension by removing the denote components
+	originalFilename := filepath.Base(path)
+	// Find where the extension starts (after tags or after title)
+	extStart := strings.Index(originalFilename, ".")
+	if extStart == -1 {
+		extStart = len(originalFilename)
+	}
+	fullExt := originalFilename[extStart:]
+
+	filename := metadata.BuildFilename(identifier, title, tags, fullExt)
 	newPath := filepath.Join(dir, filename)
 
 	if newPath != path {
@@ -113,15 +123,29 @@ func HandleRenameEvent(f *client.Fsys, identifier, denoteDir string) error {
 
 // HandleDeleteEvent handles 'd' events from the 9P server.
 // When a note is deleted in 9P, delete the file from the filesystem.
-func HandleDeleteEvent(identifier, denoteDir string) error {
-	pattern := filepath.Join(denoteDir, identifier+"--*")
+func HandleDeleteEvent(f *client.Fsys, identifier, denoteDir string) error {
+	// Get path from metadata to find correct directory
+	path, err := p9client.ReadFile(f, "n/"+identifier+"/path")
+	if err != nil || path == "" {
+		// Fallback to denoteDir if path not set
+		path = denoteDir
+	}
+
+	// Use directory from metadata path
+	dir := filepath.Dir(path)
+	if dir == "." {
+		dir = denoteDir
+	}
+
+	pattern := filepath.Join(dir, identifier+"--*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to find file: %w", err)
 	}
 
 	if len(matches) == 0 {
-		return fmt.Errorf("no file found matching identifier: %s", identifier)
+		log.Printf("no file found for %s, metadata already cleaned", identifier)
+		return nil
 	}
 
 	if len(matches) > 1 {

@@ -75,14 +75,18 @@ const (
 
 var fileNames = []string{"path", "title", "keywords", "ctl"}
 
+// Callbacks for note operations
+type Callbacks struct {
+	OnNew    func(identifier string) error
+	OnUpdate func(identifier string) error
+	OnRename func(identifier string) error
+	OnDelete func(identifier string) error
+}
+
 type server struct {
 	notes         metadata.Results
 	mu            sync.RWMutex
-	eventChan     chan string
-	eventSubs     map[uint64]chan string
-	eventMu       sync.RWMutex
-	nextSubID     uint64
-	nextSubIDMu   sync.Mutex
+	callbacks     Callbacks
 	filterQuery   string
 	filteredNotes []*metadata.Metadata
 }
@@ -97,7 +101,6 @@ type fid struct {
 	path   string
 	offset int64
 	mode   uint8
-	subID  uint64 // unique event subscriber ID, 0 if not subscribed
 }
 
 var srv *server
@@ -114,32 +117,18 @@ func findNote(identifier string) (*metadata.Metadata, error) {
 	return nil, fmt.Errorf("note not found: %s", identifier)
 }
 
-// emitEvent queues an event for broadcast
-func emitEvent(id string, op rune) {
-	event := fmt.Sprintf("%s %c", id, op)
-	select {
-	case srv.eventChan <- event:
-	default:
-	}
-}
-
-
 // Getdir returns the denote directory
 // StartServer starts the 9P fileserver in the background with pre-loaded metadata.
 // initialData should contain all notes to be served - typically loaded by sync.LoadAll().
-func StartServer(initialData metadata.Results) error {
+func StartServer(initialData metadata.Results, callbacks Callbacks) error {
 	if srv != nil {
 		return fmt.Errorf("server already running")
 	}
 
 	srv = &server{
 		notes:     initialData,
-		eventChan: make(chan string, 100),
-		eventSubs: make(map[uint64]chan string),
+		callbacks: callbacks,
 	}
-
-	// Start broadcaster goroutine
-	go srv.broadcastEvents()
 
 	// Get namespace and create Unix socket path
 	ns := client.Namespace()
@@ -162,20 +151,6 @@ func StartServer(initialData metadata.Results) error {
 	go srv.acceptLoop(listener)
 
 	return nil
-}
-
-func (s *server) broadcastEvents() {
-	for event := range s.eventChan {
-		s.eventMu.RLock()
-		for _, sub := range s.eventSubs {
-			select {
-			case sub <- event:
-			default:
-				// Subscriber slow, drop event
-			}
-		}
-		s.eventMu.RUnlock()
-	}
 }
 
 func (s *server) acceptLoop(listener net.Listener) {
@@ -311,14 +286,6 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/index"
 				found = true
-			} else if "event" == name {
-				qid := plan9.Qid{
-					Type: QTFile,
-					Path: uint64(qidEvent),
-				}
-				qids = append(qids, qid)
-				path = "/event"
-				found = true
 			} else if "new" == name {
 				qid := plan9.Qid{
 					Type: QTFile,
@@ -411,20 +378,6 @@ func (s *server) open(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 
 	f.mode = fc.Mode
 
-	// Register event subscriber if opening event file
-	if f.qid.Path == uint64(qidEvent) {
-		s.nextSubIDMu.Lock()
-		s.nextSubID++
-		subID := s.nextSubID
-		s.nextSubIDMu.Unlock()
-
-		f.subID = subID
-
-		s.eventMu.Lock()
-		s.eventSubs[subID] = make(chan string, 10)
-		s.eventMu.Unlock()
-	}
-
 	return &plan9.Fcall{
 		Type: plan9.Ropen,
 		Tag:  fc.Tag,
@@ -439,33 +392,6 @@ func (s *server) read(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	if !ok {
 		cs.mu.Unlock()
 		return errorFcall(fc, "fid not found")
-	}
-
-	// Handle event file reads specially
-	if f.qid.Path == uint64(qidEvent) {
-		subID := f.subID
-		s.eventMu.RLock()
-		eventChan, ok := s.eventSubs[subID]
-		s.eventMu.RUnlock()
-		cs.mu.Unlock()
-
-		if !ok {
-			return errorFcall(fc, "event subscriber not found")
-		}
-
-		// Block waiting for next event (without holding server mutex)
-		event, ok := <-eventChan
-		if !ok {
-			return errorFcall(fc, "event channel closed")
-		}
-		data := []byte(event + "\n")
-
-		return &plan9.Fcall{
-			Type:  plan9.Rread,
-			Tag:   fc.Tag,
-			Count: uint32(len(data)),
-			Data:  data,
-		}
 	}
 
 	defer cs.mu.Unlock()
@@ -566,8 +492,10 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		s.notes = append(s.notes, meta)
 		s.mu.Unlock()
 
-		// Emit event notification
-		emitEvent(identifier, 'n')
+		// Call new note callback
+		if s.callbacks.OnNew != nil {
+			go s.callbacks.OnNew(identifier) // async to not block write
+		}
 
 		return &plan9.Fcall{
 			Type:  plan9.Rwrite,
@@ -596,11 +524,16 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	switch fieldName {
 	case "path":
 		note.Path = value
-		emitEvent(noteID, 'r')
+		// Don't emit 'r' - path is metadata only, doesn't trigger renames
 	case "title":
 		note.Title = value
-		emitEvent(noteID, 'u')
-		emitEvent(noteID, 'r')
+		// Call update and rename callbacks synchronously
+		if s.callbacks.OnUpdate != nil {
+			s.callbacks.OnUpdate(noteID)
+		}
+		if s.callbacks.OnRename != nil {
+			s.callbacks.OnRename(noteID)
+		}
 	case "keywords":
 		if value == "" {
 			note.Tags = []string{}
@@ -611,11 +544,22 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			}
 			note.Tags = tags
 		}
-		emitEvent(noteID, 'u')
-		emitEvent(noteID, 'r')
+		// Call update and rename callbacks synchronously
+		if s.callbacks.OnUpdate != nil {
+			s.callbacks.OnUpdate(noteID)
+		}
+		if s.callbacks.OnRename != nil {
+			s.callbacks.OnRename(noteID)
+		}
 	case "ctl":
-		// Handle delete event specially
-		if value == "d" {
+		// Handle control commands
+		switch value {
+		case "d":
+			// Call delete callback BEFORE removing metadata
+			if s.callbacks.OnDelete != nil {
+				s.callbacks.OnDelete(noteID)
+			}
+
 			// Remove from in-memory state
 			s.mu.Lock()
 			for i, n := range s.notes {
@@ -632,11 +576,11 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				}
 			}
 			s.mu.Unlock()
-		}
-
-		// Emit custom event (e.g., "r" for rename, "d" for delete)
-		if len(value) == 1 {
-			emitEvent(noteID, rune(value[0]))
+		case "r":
+			// Manual rename request
+			if s.callbacks.OnRename != nil {
+				s.callbacks.OnRename(noteID)
+			}
 		}
 	default:
 		return errorFcall(fc, "field is read-only")
@@ -675,16 +619,6 @@ func (s *server) clunk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
-	// Unregister event subscriber if this fid has one
-	if f, ok := cs.fids[fc.Fid]; ok && f.subID != 0 {
-		s.eventMu.Lock()
-		if ch, ok := s.eventSubs[f.subID]; ok {
-			close(ch)
-			delete(s.eventSubs, f.subID)
-		}
-		s.eventMu.Unlock()
-	}
-
 	delete(cs.fids, fc.Fid)
 
 	return &plan9.Fcall{
@@ -697,19 +631,6 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 	var dirs []plan9.Dir
 
 	if path == "/" {
-		// add event node
-		dirs = append(dirs, plan9.Dir{
-			Qid: plan9.Qid{
-				Type: QTFile,
-				Path: uint64(qidEvent),
-			},
-			Mode:   0444,
-			Name:   "event",
-			Uid:    "denote",
-			Gid:    "denote",
-			Muid:   "denote",
-			Length: 0,
-		})
 		// add index node
 		dirs = append(dirs, plan9.Dir{
 			Qid: plan9.Qid{
