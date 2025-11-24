@@ -244,7 +244,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if _, err = w.Write("tag", []byte("New Put Remove Reset Sync")); err != nil {
+	if _, err = w.Write("tag", []byte("New Put Remove Sync")); err != nil {
 		w.Del(true)
 		log.Fatal(fmt.Errorf("failed to set tag: %w", err))
 	}
@@ -315,11 +315,6 @@ func main() {
 				// Refresh window and restore position
 				refreshWindowWithDefaults(w)
 				w.Addr("#%d,#%d", q0, q1)
-				w.Ctl("dot=addr")
-				w.Ctl("show")
-			case "Reset":
-				refreshWindowWithDefaults(w)
-				w.Addr("#0")
 				w.Ctl("dot=addr")
 				w.Ctl("show")
 			case "Look":

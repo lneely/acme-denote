@@ -65,14 +65,6 @@ const (
 	qidCtl      = 999995
 )
 
-// File types within a note directory
-const (
-	fileTypePath = iota
-	fileTypeTitle
-	fileTypeKeywords
-	fileTypeCtl
-)
-
 var fileNames = []string{"path", "title", "keywords", "ctl"}
 
 // Callbacks for note operations
@@ -278,7 +270,7 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		if path == "/" {
 			// Walking from root
 			found := false
-			if "index" == name {
+			if name == "index" {
 				qid := plan9.Qid{
 					Type: QTFile,
 					Path: uint64(qidIndex),
@@ -286,7 +278,7 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/index"
 				found = true
-			} else if "new" == name {
+			} else if name == "new" {
 				qid := plan9.Qid{
 					Type: QTFile,
 					Path: uint64(qidNew),
@@ -294,7 +286,7 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/new"
 				found = true
-			} else if "ctl" == name {
+			} else if name == "ctl" {
 				qid := plan9.Qid{
 					Type: QTFile,
 					Path: uint64(qidCtl),
@@ -302,7 +294,7 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				qids = append(qids, qid)
 				path = "/ctl"
 				found = true
-			} else if "n" == name {
+			} else if name == "n" {
 				qid := plan9.Qid{
 					Type: QTDir,
 					Path: uint64(qidNDir),

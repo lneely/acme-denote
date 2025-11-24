@@ -61,7 +61,7 @@ You may edit metadata directly in the Denote window.
 
 ```
 -------------------------------------------------------
-/Denote/ Del Snarf | Look New Put Remove Reset Sync
+/Denote/ Del Snarf | Look New Put Remove Sync
 -------------------------------------------------------
 20251112T221141 | my dummy file 7 | dummy
 20251112T221140 | my dummy file 6 | dummy
@@ -74,7 +74,7 @@ You may edit metadata directly in the Denote window.
 
 ```
 -------------------------------------------------------
-/Denote/ Del Snarf | Look New Put Remove Reset Sync
+/Denote/ Del Snarf | Look New Put Remove Sync
 -------------------------------------------------------
 20251112T221141 | you can edit | dummy
 20251112T221140 | the titles | dummy
@@ -86,6 +86,10 @@ You may edit metadata directly in the Denote window.
 ```
 
 Middle-click `Put` to write all metadata changes. This will rename files and, when possible, update front matter.
+
+## Sync
+
+Sometimes it's necessary to update the Denote metadata from the filesystem. Middle-click `Sync` to do this.
 
 ## File Format
 
