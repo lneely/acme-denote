@@ -26,9 +26,28 @@ In Acme, you can highlight something like:
 
 Pass it as input to the `New` tag with the `2-1` chord. This will create a new Acme window with Denote frontmatter and an appropriate file path. **Important:** the actual file is not created until the `Put` command is executed. (Tags are optional but recommended).
 
+#### Create notes in subdirectories
+You can organize notes into subdirectories using the `/:` separator in the title:
+```
+'journal/:today's entry' journal
+'projects/:new project' project,idea
+'meetings/:standup notes' work,meeting
+```
+
+The text before `/:` becomes the subdirectory path (e.g., `journal/`, `projects/`, `meetings/`), and the text after becomes the note title. Subdirectories are created automatically if they don't exist. This is useful for organizing related notes together.
+
 ### Open a note
 
 First, be sure to set up the [plumbing rules](./PLUMBING.md). Then, simply right-click on any identifier in the `/Denote/` window.
+
+### Delete a note
+
+To delete a note, highlight its identifier in the `/Denote/` window:
+```
+20251112T221141
+```
+
+Pass it as input to the `Remove` tag with the `2-1` chord. This will delete the note file from the filesystem and remove it from the index.
 
 ### Search notes
 Type some search pattern. Examples:
