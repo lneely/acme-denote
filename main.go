@@ -86,6 +86,19 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 		title = title[idx+2:]   // Skip past '/:'
 		targetDir = filepath.Join(denoteDir, subdir)
 
+		targetDir = filepath.Clean(targetDir)
+		absTarget, err := filepath.Abs(targetDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve target directory: %w", err)
+		}
+		absBase, err := filepath.Abs(denoteDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve base directory: %w", err)
+		}
+		if !strings.HasPrefix(absTarget, absBase) {
+			return fmt.Errorf("path traversal attempt: directory outside base")
+		}
+
 		// Create subdirectory if it doesn't exist
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", targetDir, err)

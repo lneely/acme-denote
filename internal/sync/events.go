@@ -76,6 +76,19 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 	newPath := filepath.Join(dir, filename)
 
 	if newPath != path {
+		newPath = filepath.Clean(newPath)
+		absNew, err := filepath.Abs(newPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve new path: %w", err)
+		}
+		absBase, err := filepath.Abs(denoteDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve base directory: %w", err)
+		}
+		if !strings.HasPrefix(absNew, absBase) {
+			return fmt.Errorf("path traversal attempt: path outside base")
+		}
+
 		if err := p9client.WriteFile(f, "n/"+identifier+"/path", newPath); err != nil {
 			return fmt.Errorf("failed to update path in 9p: %w", err)
 		}
@@ -113,6 +126,19 @@ func HandleRenameEvent(f *client.Fsys, identifier, denoteDir string) error {
 
 	// Rename if different.
 	if oldPath != newPath {
+		newPath = filepath.Clean(newPath)
+		absNew, err := filepath.Abs(newPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve new path: %w", err)
+		}
+		absBase, err := filepath.Abs(denoteDir)
+		if err != nil {
+			return fmt.Errorf("failed to resolve base directory: %w", err)
+		}
+		if !strings.HasPrefix(absNew, absBase) {
+			return fmt.Errorf("path traversal attempt: path outside base")
+		}
+
 		if err := os.Rename(oldPath, newPath); err != nil {
 			return fmt.Errorf("failed to rename file from %s to %s: %w", oldPath, newPath, err)
 		}
