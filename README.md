@@ -118,23 +118,17 @@ This program supports encrypted notes by integrating with [acme-crypt](https://g
 
 ## Extensions
 
-Some extensions have also been ported.
+Some extensions have also been ported. While these extensions, like the main program, try to stay as true as possible to the original program and be as feature-complete as possible, they is intentionally *not* exact replicas.
 
 ### Djournal
 
-Concept from prot's [denote-journal](https://github.com/protesilaos/denote-journal). While `Djournal` tries to stay as true as possible to the original program and be as feature-complete as possible, it is intentionally *not* an exact replica.
+Create or open journal entries with date-based titles. Supports daily, weekly, monthly, or yearly journals. Concept from prot's [denote-journal](https://github.com/protesilaos/denote-journal).
 
-Create or open today's journal entry (or this week's, month's, or year's, depending on `interval` configuration):
+**Configuration:**
 
-```
-Djournal
-```
+Customize journal behavior by editing variables in the `Djournal` script:
 
-Supports: `d` (days), `h` (hours), `m` (minutes). You can use this to create multiple entries on the same day. To find an existing journal entry, use the search function in `Denote` described above. You can also pass the args in with the `2-1` chord.
-
-Configure `Djournal` by editing the configuration options in the `Djournal` script.
-
-```
+```rc
 # Journal interval: daily, weekly, monthly, yearly
 interval=daily
 
@@ -150,5 +144,97 @@ titleformat=full
 signature=''
 ```
 
-### Merge
+**Basic Usage:**
 
+Open today's journal entry (creates if it doesn't exist):
+
+```
+Djournal
+```
+
+Journal entries are stored in `journal/` subdirectory with the `journal` tag.
+
+**Time Navigation:**
+
+Navigate to past or future dates using time offsets:
+
+```
+Djournal +2d    # 2 days from now
+Djournal -1d    # yesterday
+Djournal -3h    # 3 hours ago
+Djournal +30m   # 30 minutes from now
+```
+
+Supported units: `d` (days), `h` (hours), `m` (minutes)
+
+### Dmerge
+
+Merge notes together or move regions of text between notes while maintaining referential integrity. Concept from prot's [denote-merge](https://github.com/protesilaos/denote-merge).
+
+
+**Configuration:**
+
+Customize annotations by editing variables in the `Dmerge` script:
+
+```rc
+# Annotation for merged files (set to '' to disable)
+annotation='MERGED FILE:'
+
+# Annotation for merged regions (set to '' to disable)
+regionannotation='MERGED REGION:'
+```
+
+**File Merge**
+
+Merge an entire note into another note:
+
+```
+Dmerge <source-id> <dest-id>
+```
+
+This will:
+- Strip frontmatter from source note
+- Append source content to destination note with annotation
+- Update all backlinks pointing to source to point to destination
+- Delete the source note file
+
+Example:
+```
+Dmerge 20251125T120000 20251125T130000
+```
+
+**Region Merge**
+
+Move a selected region of text from one note to another. Select text in an Acme window, then:
+
+```
+Dmerge <dest-id>
+```
+
+This will:
+- Move the selected text to the destination note
+- Replace the selection with a link to the destination: `denote:<dest-id>`
+- Leave the source note open (dirty) for you to `Put`
+
+**With Formatting:**
+
+You can wrap the merged region in various formats:
+
+```
+Dmerge <dest-id> <format>
+```
+
+Available formats:
+- `plain` - No formatting (default)
+- `plain-indented` - Add 4-space indentation
+- `org-src` - Org source block (`#+begin_src` / `#+end_src`)
+- `org-quote` - Org quote block (`#+begin_quote` / `#+end_quote`)
+- `org-example` - Org example block (`#+begin_example` / `#+end_example`)
+- `md-quote` - Markdown blockquote (prefix with `> `)
+- `md-fence` - Markdown fenced code block (` ``` `)
+
+Examples:
+```
+Dmerge 20251125T130000 org-quote
+Dmerge 20251125T130000 md-fence
+```

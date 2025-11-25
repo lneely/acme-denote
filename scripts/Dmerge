@@ -1,66 +1,183 @@
 #!/usr/local/plan9/bin/rc
 
-# Merge - Merge source note into destination note
-# Usage: Merge <source-id> <dest-id>
+# Merge - Merge notes or regions
+# Usage: Dmerge <source-id> <dest-id>          (file merge)
+#        Dmerge <dest-id> [format]             (region merge, in acme)
+# Formats: plain, plain-indented, org-src, org-quote, org-example, md-quote, md-fence
 
-if(~ $#* 2) {
-	src=$1
-	dst=$2
-}
-if not {
-	echo 'usage: Merge source-id dest-id' >[1=2]
-	exit 1
-}
+# Annotation for merged files (set to '' to disable)
+annotation='MERGED FILE:'
 
-# Read paths and titles
-srcpath=`{9p read denote/n/$src/path}
-dstpath=`{9p read denote/n/$dst/path}
-srctitle=`{9p read denote/n/$src/title}
+# Annotation for merged regions (set to '' to disable)
+regionannotation='MERGED REGION:'
 
-if(~ $#srcpath 0 || ~ $#dstpath 0) {
-	echo 'error: note not found' >[1=2]
-	exit 1
-}
-
-# Extract content without frontmatter (everything after first blank line)
-awk '
-BEGIN { found_blank = 0 }
-found_blank { print }
-!found_blank && /^$/ { found_blank = 1 }
-' $srcpath > /tmp/content.$pid
-
-# Append source content to destination with annotation
-{
-	cat $dstpath
-	echo ''
-	echo '* * *'
-	echo ''
-	echo 'MERGED FILE:' $srctitle
-	echo ''
-	cat /tmp/content.$pid
-} > /tmp/merge.$pid
-
-rm /tmp/content.$pid
-
-# Update all backlinks pointing to source
-9p read denote/n/$src/backlinks | awk -F'|' '{print $1}' | while(read linkid) {
-	linkid=`{echo $linkid | awk '{gsub(/^ +| +$/, ""); print}'}
-	if(! ~ $#linkid 0) {
-		linkpath=`{9p read denote/n/$linkid/path}
-		if(! ~ $#linkpath 0) {
-			# Replace denote:src with denote:dst in the file
-			sed 's/denote:'$src'/denote:'$dst'/g' $linkpath > /tmp/relink.$pid
-			cp /tmp/relink.$pid $linkpath
-			rm /tmp/relink.$pid
-		}
+# Check for selection if in acme
+hasselection=0
+if(! ~ $winid '') {
+	selection=`{9p read acme/$winid/rdsel}
+	if(! ~ $#selection 0 && ! ~ $selection '') {
+		hasselection=1
 	}
 }
 
-# Write merged content to destination
-cp /tmp/merge.$pid $dstpath
-rm /tmp/merge.$pid
+# Parse arguments and determine mode
+if(~ $#* 2) {
+	# Two args: region merge with format OR file merge
+	if(~ $hasselection 1) {
+		# Region merge with format
+		dst=$1
+		format=$2
+		mode=region
 
-# Delete source note
-echo 'd' | 9p write denote/n/$src/ctl
+		# Extract source note ID from window tag
+		tag=`{9p read acme/$winid/tag}
+		filename=`{echo $tag | awk '{for(i=1;i<=NF;i++) if($i ~ /[0-9]{8}T[0-9]{6}/) {print $i; exit}}'}
+		src=`{echo $filename | sed 's/--.*//'}
+	}
+	if not {
+		# File merge
+		src=$1
+		dst=$2
+		mode=file
+	}
+}
+if not if(~ $#* 1) {
+	# One arg: region merge (plain format)
+	if(~ $winid '') {
+		echo 'region merge requires running from acme window' >[1=2]
+		exit 1
+	}
+	if(~ $hasselection 0) {
+		echo 'no text selected' >[1=2]
+		exit 1
+	}
 
-echo 'Merged' $src 'into' $dst
+	dst=$1
+	format=plain
+	mode=region
+
+	# Extract source note ID from window tag
+	tag=`{9p read acme/$winid/tag}
+	filename=`{echo $tag | awk '{for(i=1;i<=NF;i++) if($i ~ /[0-9]{8}T[0-9]{6}/) {print $i; exit}}'}
+	src=`{echo $filename | sed 's/--.*//'}
+}
+if not {
+	echo 'usage: Dmerge source-id dest-id OR Dmerge dest-id [format] (in acme)' >[1=2]
+	exit 1
+}
+
+# Branch based on mode
+if(~ $mode file) {
+	# FILE MERGE MODE
+
+	# Read paths and titles
+	srcpath=`{9p read denote/n/$src/path}
+	dstpath=`{9p read denote/n/$dst/path}
+	srctitle=`{9p read denote/n/$src/title}
+
+	if(~ $#srcpath 0 || ~ $#dstpath 0) {
+		echo 'error: note not found' >[1=2]
+		exit 1
+	}
+
+	# Extract content without frontmatter (everything after first blank line)
+	awk '
+	BEGIN { found_blank = 0 }
+	found_blank { print }
+	!found_blank && /^$/ { found_blank = 1 }
+	' $srcpath > /tmp/content.$pid
+
+	# Append source content to destination with optional annotation
+	{
+		cat $dstpath
+		if(! ~ $annotation '') {
+			echo ''
+			echo '* * *'
+			echo ''
+			echo $annotation $srctitle
+			echo ''
+		}
+		cat /tmp/content.$pid
+	} > /tmp/merge.$pid
+
+	rm /tmp/content.$pid
+
+	# Update all backlinks pointing to source
+	9p read denote/n/$src/backlinks | awk -F'|' '{print $1}' | while(read linkid) {
+		linkid=`{echo $linkid | awk '{gsub(/^ +| +$/, ""); print}'}
+		if(! ~ $#linkid 0) {
+			linkpath=`{9p read denote/n/$linkid/path}
+			if(! ~ $#linkpath 0) {
+				# Replace denote:src with denote:dst in the file
+				sed 's/denote:'$src'/denote:'$dst'/g' $linkpath > /tmp/relink.$pid
+				cp /tmp/relink.$pid $linkpath
+				rm /tmp/relink.$pid
+			}
+		}
+	}
+
+	# Write merged content to destination
+	cp /tmp/merge.$pid $dstpath
+	rm /tmp/merge.$pid
+
+	# Delete source note
+	echo 'd' | 9p write denote/n/$src/ctl
+
+	echo 'Merged' $src 'into' $dst
+}
+
+if not if(~ $mode region) {
+	# REGION MERGE MODE
+
+	# Read destination path
+	dstpath=`{9p read denote/n/$dst/path}
+
+	if(~ $#dstpath 0) {
+		echo 'error: destination note not found' >[1=2]
+		exit 1
+	}
+
+	# Apply formatting to selection
+	switch($format) {
+	case plain
+		formatted=$selection
+	case plain-indented
+		formatted=`{echo $selection | sed 's/^/    /'}
+	case org-src
+		formatted=`{echo '#+begin_src'; echo $selection; echo '#+end_src'}
+	case org-quote
+		formatted=`{echo '#+begin_quote'; echo $selection; echo '#+end_quote'}
+	case org-example
+		formatted=`{echo '#+begin_example'; echo $selection; echo '#+end_example'}
+	case md-quote
+		formatted=`{echo $selection | sed 's/^/> /'}
+	case md-fence
+		formatted=`{echo '```'; echo $selection; echo '```'}
+	case *
+		echo 'unknown format:' $format >[1=2]
+		echo 'valid formats: plain, plain-indented, org-src, org-quote, org-example, md-quote, md-fence' >[1=2]
+		exit 1
+	}
+
+	# Append formatted selection to destination with optional annotation
+	{
+		cat $dstpath
+		if(! ~ $regionannotation '') {
+			echo ''
+			echo '* * *'
+			echo ''
+			echo $regionannotation
+			echo ''
+		}
+		echo "$formatted"
+	} > /tmp/merge.$pid
+
+	# Write merged content to destination
+	cp /tmp/merge.$pid $dstpath
+	rm /tmp/merge.$pid
+
+	# Replace selection with link to destination
+	echo -n 'denote:'$dst | 9p write acme/$winid/wrsel
+
+	echo 'Region merged from' $src 'into' $dst '(format:' $format')'
+}
