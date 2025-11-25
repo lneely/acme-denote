@@ -178,6 +178,10 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 				break
 			}
 		}
+		// Skip any blank lines after frontmatter since template includes one
+		for endIdx < len(lines) && lines[endIdx] == "" {
+			endIdx++
+		}
 		if endIdx > 0 {
 			newText = newFrontMatter + strings.Join(lines[endIdx:], "\n")
 		} else {
@@ -186,7 +190,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 
 	case "md-yaml":
 		// Replace YAML front matter
-		re := regexp.MustCompile(`(?s)^---\n.*?\n---\n*`)
+		re := regexp.MustCompile(`(?s)^---\n.*?\n---\n`)
 		if re.MatchString(text) {
 			newText = re.ReplaceAllString(text, newFrontMatter)
 		} else {
@@ -195,7 +199,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 
 	case "md-toml":
 		// Replace TOML front matter
-		re := regexp.MustCompile(`(?s)^\+\+\+\n.*?\n\+\+\+\n*`)
+		re := regexp.MustCompile(`(?s)^\+\+\+\n.*?\n\+\+\+\n`)
 		if re.MatchString(text) {
 			newText = re.ReplaceAllString(text, newFrontMatter)
 		} else {
@@ -204,7 +208,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 
 	case "txt":
 		// Replace text front matter
-		re := regexp.MustCompile(`(?s)^title:.*?\n-+\n*`)
+		re := regexp.MustCompile(`(?s)^title:.*?\n-+\n`)
 		if re.MatchString(text) {
 			newText = re.ReplaceAllString(text, newFrontMatter)
 		} else {
