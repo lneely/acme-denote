@@ -118,7 +118,7 @@ This program supports encrypted notes by integrating with [acme-crypt](https://g
 
 ## Extensions
 
-Some extensions have also been ported. While these extensions, like the main program, try to stay as true as possible to the original program and be as feature-complete as possible, they is intentionally *not* exact replicas.
+Some extensions have also been ported. While these extensions, like the main program, try to stay as true as possible to the original program and be as feature-complete as possible, they are intentionally *not* exact replicas.
 
 ### Djournal
 
