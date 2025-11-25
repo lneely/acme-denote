@@ -15,13 +15,14 @@ import (
 // HandleUpdateEvent handles 'u' events from the 9P server.
 // When metadata is updated in 9P, sync it to the filesystem.
 func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
-	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "path")
+	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "signature", "path")
 	if err != nil {
 		return err
 	}
 
 	title := fields["title"]
 	keywords := fields["keywords"]
+	signature := fields["signature"]
 	path := fields["path"]
 
 	var tags []string
@@ -48,6 +49,7 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 			Title:      title,
 			Tags:       tags,
 			Identifier: identifier,
+			Signature:  signature,
 			FileType:   fileType,
 		}
 
@@ -72,7 +74,7 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 	fullExt := originalFilename[extStart:]
 
-	filename := metadata.BuildFilename(identifier, title, tags, fullExt)
+	filename := metadata.BuildFilename(identifier, signature, title, tags, fullExt)
 	newPath := filepath.Join(dir, filename)
 
 	if newPath != path {

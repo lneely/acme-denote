@@ -67,7 +67,7 @@ const (
 	qidCtl      = 999995
 )
 
-var fileNames = []string{"path", "title", "keywords", "ctl", "backlinks"}
+var fileNames = []string{"path", "title", "keywords", "signature", "ctl", "backlinks"}
 
 // Callbacks for note operations
 type Callbacks struct {
@@ -443,7 +443,7 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 	if f.path == "/new" {
 		input := strings.TrimSpace(string(fc.Data))
 
-		// Parse: 'Title' tag1,tag2,...
+		// Parse: 'Title' ==signature tag1,tag2,...
 		// Extract title (must be single-quoted)
 		if !strings.HasPrefix(input, "'") {
 			return errorFcall(fc, "title must be single-quoted")
@@ -459,16 +459,34 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			return errorFcall(fc, "title cannot be empty")
 		}
 
-		// Extract tags (everything after closing quote)
+		// Extract signature and tags (everything after closing quote)
 		remainder := strings.TrimSpace(input[closeQuote+2:])
+		var signature string
 		var tags []string
+
 		if remainder != "" {
-			// Validate tags
-			tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
-			if !tagPattern.MatchString(remainder) {
-				return errorFcall(fc, "tags must be comma-delimited lowercase unicode words (no spaces)")
+			// Check if signature is present (starts with ==)
+			if strings.HasPrefix(remainder, "==") {
+				// Find end of signature (space before tags)
+				spaceIdx := strings.Index(remainder, " ")
+				if spaceIdx == -1 {
+					// No tags, just signature
+					signature = remainder[2:] // Skip ==
+				} else {
+					signature = remainder[2:spaceIdx] // Skip ==
+					remainder = strings.TrimSpace(remainder[spaceIdx+1:])
+				}
 			}
-			tags = strings.Split(remainder, ",")
+
+			// Extract tags if present
+			if remainder != "" && !strings.HasPrefix(remainder, "==") {
+				// Validate tags
+				tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
+				if !tagPattern.MatchString(remainder) {
+					return errorFcall(fc, "tags must be comma-delimited lowercase unicode words (no spaces)")
+				}
+				tags = strings.Split(remainder, ",")
+			}
 		}
 
 		// Generate timestamp identifier
@@ -478,6 +496,7 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 		// (actual file will be created by denote package event handler)
 		meta := &metadata.Metadata{
 			Identifier: identifier,
+			Signature:  signature,
 			Title:      title,
 			Tags:       tags,
 			Path:       "", // Will be set when file is created
@@ -540,6 +559,15 @@ func (s *server) write(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 			}
 			note.Tags = tags
 		}
+		// Call update and rename callbacks synchronously
+		if s.callbacks.OnUpdate != nil {
+			s.callbacks.OnUpdate(noteID)
+		}
+		if s.callbacks.OnRename != nil {
+			s.callbacks.OnRename(noteID)
+		}
+	case "signature":
+		note.Signature = value
 		// Call update and rename callbacks synchronously
 		if s.callbacks.OnUpdate != nil {
 			s.callbacks.OnUpdate(noteID)
@@ -838,6 +866,8 @@ func (s *server) getFileContent(path string) string {
 		return note.Title
 	case "keywords":
 		return strings.Join(note.Tags, ",")
+	case "signature":
+		return note.Signature
 	case "backlinks":
 		return s.getBacklinks(noteID)
 	}

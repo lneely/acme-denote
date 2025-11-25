@@ -13,6 +13,7 @@ var templates = map[string]string{
 #+date:       %s
 #+filetags:   %s
 #+identifier: %s
+#+signature:  %s
 
 `,
 	"md-yaml": `---
@@ -20,6 +21,7 @@ title:      %s
 date:       %s
 tags:       %s
 identifier: %s
+signature:  %s
 ---
 
 `,
@@ -28,6 +30,7 @@ title      = %s
 date       = %s
 tags       = %s
 identifier = %s
+signature  = %s
 +++
 
 `,
@@ -35,6 +38,7 @@ identifier = %s
 date:       %s
 tags:       %s
 identifier: %s
+signature:  %s
 ---------------------------
 
 `,
@@ -69,6 +73,7 @@ type FrontMatter struct {
 	Title      string
 	Tags       []string
 	Identifier string
+	Signature  string
 	FileType   string // org, md-yaml, md-toml, txt
 }
 
@@ -92,6 +97,9 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 		if m := regexp.MustCompile(`(?m)^#\+identifier:\s*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Identifier = strings.TrimSpace(m[1])
 		}
+		if m := regexp.MustCompile(`(?m)^#\+signature:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+			fm.Signature = strings.TrimSpace(m[1])
+		}
 
 	case ".md":
 		// Try YAML first
@@ -112,6 +120,9 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 			if m := regexp.MustCompile(`(?m)^identifier:\s*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
 				fm.Identifier = strings.TrimSpace(m[1])
 			}
+			if m := regexp.MustCompile(`(?m)^signature:\s*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
+				fm.Signature = strings.TrimSpace(m[1])
+			}
 		} else {
 			// Try TOML
 			tomlRe := regexp.MustCompile(`(?ms)^\+\+\+\n(.*?)\n\+\+\+`)
@@ -131,6 +142,9 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 				if m := regexp.MustCompile(`(?m)^identifier\s*=\s*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
 					fm.Identifier = strings.TrimSpace(m[1])
 				}
+				if m := regexp.MustCompile(`(?m)^signature\s*=\s*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
+					fm.Signature = strings.TrimSpace(m[1])
+				}
 			}
 		}
 
@@ -144,6 +158,9 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 		}
 		if m := regexp.MustCompile(`(?m)^identifier:\s*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Identifier = strings.TrimSpace(m[1])
+		}
+		if m := regexp.MustCompile(`(?m)^signature:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+			fm.Signature = strings.TrimSpace(m[1])
 		}
 	}
 
@@ -164,7 +181,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 	}
 
 	template := templates[fm.FileType]
-	newFrontMatter := fmt.Sprintf(template, fm.Title, dateStr, keywordsStr, fm.Identifier)
+	newFrontMatter := fmt.Sprintf(template, fm.Title, dateStr, keywordsStr, fm.Identifier, fm.Signature)
 
 	var newText string
 	switch fm.FileType {
@@ -222,7 +239,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 }
 
 // Generate generates front matter content for given parameters
-func Generate(title string, tags []string, fileType, identifier string) string {
+func Generate(title, signature string, tags []string, fileType, identifier string) string {
 	template := templates[fileType]
 	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
 
@@ -232,5 +249,5 @@ func Generate(title string, tags []string, fileType, identifier string) string {
 	}
 
 	keywordsStr := FormatTags(tags, fileType)
-	return fmt.Sprintf(template, title, dateStr, keywordsStr, identifier)
+	return fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, signature)
 }

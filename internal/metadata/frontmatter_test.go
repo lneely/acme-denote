@@ -152,7 +152,7 @@ func TestGenerate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Generate(title, tags, tt.fileType, identifier)
+			got := Generate(title, "", tags, tt.fileType, identifier)
 
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
@@ -206,7 +206,7 @@ func TestGenerateEmptyTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Generate(title, tags, tt.fileType, identifier)
+			got := Generate(title, "", tags, tt.fileType, identifier)
 
 			if !strings.Contains(got, tt.wantTags) {
 				t.Errorf("Generate() with empty tags should contain %q\nGot:\n%s",
@@ -629,7 +629,7 @@ func TestFrontMatterRoundTrip(t *testing.T) {
 	for _, fileType := range fileTypes {
 		t.Run(fileType, func(t *testing.T) {
 			// Generate front matter
-			content := Generate(title, tags, fileType, identifier)
+			content := Generate(title, "", tags, fileType, identifier)
 
 			// Parse it back
 			ext := FileExtensions[fileType]

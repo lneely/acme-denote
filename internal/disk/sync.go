@@ -284,6 +284,12 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 		return err
 	}
 
+	// Write signature (triggers 'u' event)
+	signaturePath := "n/" + identifier + "/signature"
+	if err := p9client.WriteFile(f, signaturePath, fm.Signature); err != nil {
+		return err
+	}
+
 	// Trigger rename event
 	ctlPath := "n/" + identifier + "/ctl"
 	if err := p9client.WriteFile(f, ctlPath, "r"); err != nil {
@@ -308,6 +314,12 @@ func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	keywords := strings.Join(meta.Tags, ",")
 	keywordsPath := "n/" + identifier + "/keywords"
 	if err := p9client.WriteFile(f, keywordsPath, keywords); err != nil {
+		return err
+	}
+
+	// Write signature (triggers 'u' event)
+	signaturePath := "n/" + identifier + "/signature"
+	if err := p9client.WriteFile(f, signaturePath, meta.Signature); err != nil {
 		return err
 	}
 

@@ -66,11 +66,12 @@ func setFilter(f *client.Fsys, filterQuery string) error {
 // handleNewEvent is called when a new note is created.
 // When a new note is created in 9P, open an acme window (file created on Put).
 func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
-	fields, err := p9client.ReadFields(f, identifier, "title", "keywords")
+	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "signature")
 	if err != nil {
 		return fmt.Errorf("failed to get metadata: %w", err)
 	}
 	title := fields["title"]
+	signature := fields["signature"]
 	var tags []string
 	if keywords, ok := fields["keywords"]; ok && keywords != "" {
 		tags = strings.Split(keywords, ",")
@@ -110,7 +111,7 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 		}
 	}
 
-	path, content := metadata.GenerateNote(targetDir, title, tags, ftype)
+	path, content := metadata.GenerateNote(targetDir, title, signature, tags, ftype)
 
 	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
 		return fmt.Errorf("failed to update path in metadata: %w", err)

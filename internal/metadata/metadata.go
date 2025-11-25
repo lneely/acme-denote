@@ -15,6 +15,7 @@ import (
 type Metadata struct {
 	Path       string
 	Identifier string
+	Signature  string
 	Title      string
 	Tags       []string
 }
@@ -128,7 +129,7 @@ func Sort(md Results, sortType SortBy, order SortOrder) {
 }
 
 // ParseFilename extracts Denote metadata from a filename only (no file I/O).
-// Returns metadata with Path, Identifier, Title (from filename), and Tags.
+// Returns metadata with Path, Identifier, Signature, Title (from filename), and Tags.
 // Caller should use ExtractTitleFromContent to get title from file content.
 func ParseFilename(path string) *Metadata {
 	fname := filepath.Base(path)
@@ -136,6 +137,11 @@ func ParseFilename(path string) *Metadata {
 
 	if m := regexp.MustCompile(`^(\d{8}T\d{6})`).FindStringSubmatch(fname); m != nil {
 		note.Identifier = m[1]
+	}
+
+	// Extract signature (optional component between identifier and title)
+	if m := regexp.MustCompile(`==([^-]+?)--`).FindStringSubmatch(fname); m != nil {
+		note.Signature = m[1]
 	}
 
 	// Extract title from filename
@@ -196,6 +202,22 @@ func slugifyTitle(title string) string {
 	return regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(slug, "")
 }
 
+// slugifySignature converts a signature to Denote-compliant format.
+// Following Denote rules: lowercase, spaces/underscores -> double equals,
+// remove special chars, normalize consecutive equals to double equals.
+func slugifySignature(sig string) string {
+	slug := strings.ToLower(sig)
+	slug = strings.ReplaceAll(slug, " ", "==")
+	slug = strings.ReplaceAll(slug, "_", "==")
+	// Remove special characters per Denote spec
+	slug = regexp.MustCompile(`[{}!@#$%^&*()+'"?,.\\|;:~\x60''""/-]`).ReplaceAllString(slug, "")
+	// Normalize consecutive equals signs (3 or more) to double equals
+	slug = regexp.MustCompile(`={3,}`).ReplaceAllString(slug, "==")
+	// Trim trailing equals
+	slug = strings.Trim(slug, "=")
+	return slug
+}
+
 // formatKeywords formats keywords for a denote filename.
 func formatKeywords(keywords []string) string {
 	if len(keywords) == 0 {
@@ -204,20 +226,30 @@ func formatKeywords(keywords []string) string {
 	return "__" + strings.Join(keywords, "_")
 }
 
+// formatSignature formats a signature for a denote filename.
+// Returns empty string if signature is empty, otherwise returns ==signature.
+func formatSignature(sig string) string {
+	if sig == "" {
+		return ""
+	}
+	return "==" + slugifySignature(sig)
+}
+
 // BuildFilename constructs a denote filename from metadata components.
-func BuildFilename(identifier, title string, keywords []string, ext string) string {
+func BuildFilename(identifier, signature, title string, keywords []string, ext string) string {
 	titleSlug := slugifyTitle(title)
+	signaturePart := formatSignature(signature)
 	keywordsPart := formatKeywords(keywords)
-	return fmt.Sprintf("%s--%s%s%s", identifier, titleSlug, keywordsPart, ext)
+	return fmt.Sprintf("%s%s--%s%s%s", identifier, signaturePart, titleSlug, keywordsPart, ext)
 }
 
 // GenerateNote creates a new note with generated identifier and content.
 // Returns (path, content).
-func GenerateNote(dir, title string, keywords []string, fileType string) (string, string) {
+func GenerateNote(dir, title, signature string, keywords []string, fileType string) (string, string) {
 	identifier := GenerateIdentifier()
 	ext := FileExtensions[fileType]
-	filename := BuildFilename(identifier, title, keywords, ext)
+	filename := BuildFilename(identifier, signature, title, keywords, ext)
 	path := filepath.Join(dir, filename)
-	content := Generate(title, keywords, fileType, identifier)
+	content := Generate(title, signature, keywords, fileType, identifier)
 	return path, content
 }
