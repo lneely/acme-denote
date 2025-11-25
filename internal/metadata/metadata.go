@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -37,8 +38,8 @@ func (es Results) Bytes() []byte {
 func (es Results) FromString(data string) (Results, error) {
 	var results Results
 	lines := strings.Split(strings.TrimSpace(data), "\n")
-	// Allow lowercase unicode letters and digits, no spaces
-	tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
+	// Allow lowercase Latin letters, other letters (CJK, etc.), and digits, no spaces
+	tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Lo}\p{Nd}]+,)*[\p{Ll}\p{Lo}\p{Nd}]+$`)
 
 	for lineNum, line := range lines {
 		line = strings.TrimSpace(line)
@@ -79,16 +80,10 @@ func (es Results) FromString(data string) (Results, error) {
 	return results, nil
 }
 
+// SlicesEqual compares two string slices for equality.
+// Deprecated: Use slices.Equal from standard library instead.
 func SlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 type SortBy string
@@ -195,7 +190,9 @@ func GenerateIdentifier() string {
 
 // slugifyTitle converts a title to a filesystem-safe slug.
 func slugifyTitle(title string) string {
-	slug := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	slug := strings.ToLower(title)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	slug = strings.ReplaceAll(slug, "_", "-")
 	return regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(slug, "")
 }
 
