@@ -1,0 +1,66 @@
+#!/usr/local/plan9/bin/rc
+
+# Merge - Merge source note into destination note
+# Usage: Merge <source-id> <dest-id>
+
+if(~ $#* 2) {
+	src=$1
+	dst=$2
+}
+if not {
+	echo 'usage: Merge source-id dest-id' >[1=2]
+	exit 1
+}
+
+# Read paths and titles
+srcpath=`{9p read denote/n/$src/path}
+dstpath=`{9p read denote/n/$dst/path}
+srctitle=`{9p read denote/n/$src/title}
+
+if(~ $#srcpath 0 || ~ $#dstpath 0) {
+	echo 'error: note not found' >[1=2]
+	exit 1
+}
+
+# Extract content without frontmatter (everything after first blank line)
+awk '
+BEGIN { found_blank = 0 }
+found_blank { print }
+!found_blank && /^$/ { found_blank = 1 }
+' $srcpath > /tmp/content.$pid
+
+# Append source content to destination with annotation
+{
+	cat $dstpath
+	echo ''
+	echo '* * *'
+	echo ''
+	echo 'MERGED FILE:' $srctitle
+	echo ''
+	cat /tmp/content.$pid
+} > /tmp/merge.$pid
+
+rm /tmp/content.$pid
+
+# Update all backlinks pointing to source
+9p read denote/n/$src/backlinks | awk -F'|' '{print $1}' | while(read linkid) {
+	linkid=`{echo $linkid | awk '{gsub(/^ +| +$/, ""); print}'}
+	if(! ~ $#linkid 0) {
+		linkpath=`{9p read denote/n/$linkid/path}
+		if(! ~ $#linkpath 0) {
+			# Replace denote:src with denote:dst in the file
+			sed 's/denote:'$src'/denote:'$dst'/g' $linkpath > /tmp/relink.$pid
+			cp /tmp/relink.$pid $linkpath
+			rm /tmp/relink.$pid
+		}
+	}
+}
+
+# Write merged content to destination
+cp /tmp/merge.$pid $dstpath
+rm /tmp/merge.$pid
+
+# Delete source note
+echo 'd' | 9p write denote/n/$src/ctl
+
+echo 'Merged' $src 'into' $dst

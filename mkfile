@@ -1,6 +1,7 @@
 install:V:
 	go build -o $HOME/bin/Denote .
-	cp scripts/Journal $HOME/bin/Journal
+	cp scripts/Djournal $HOME/bin/Djournal
+	cp scripts/Dmerge $HOME/bin/Dmerge
 
 clean:V:
-	rm -f $HOME/bin/Denote $HOME/bin/Journal
+	rm -f $HOME/bin/Denote $HOME/bin/Djournal $HOME/bin/Dmerge

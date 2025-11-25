@@ -1,0 +1,128 @@
+#!/usr/local/plan9/bin/rc
+
+# Journal interval: daily, weekly, monthly, yearly
+interval=daily
+
+# Title format: full, date, day, year
+# Examples:
+#   full: "wednesday 12 november 2025 22:11"
+#   date: "wednesday 12 november 2025"
+#   day:  "wednesday"
+#   year: "2025"
+titleformat=full
+
+# Signature (optional, added to filename as ==signature)
+signature=''
+
+# Parse time offset argument (e.g., +2d, -3h, +15m)
+offset=0
+if(! ~ $#* 0) {
+	arg=$1
+	# Extract components using awk
+	sign=`{echo $arg | awk '{print substr($0,1,1)}'}
+	num=`{echo $arg | awk '{s=substr($0,2); sub(/[a-z]$/,"",s); print s}'}
+	unit=`{echo $arg | awk '{print substr($0,length($0))}'}
+
+	# Calculate offset in seconds
+	switch($unit) {
+	case d
+		offset=`{hoc -e 'int('$num' * 86400)'}
+	case h
+		offset=`{hoc -e 'int('$num' * 3600)'}
+	case m
+		offset=`{hoc -e 'int('$num' * 60)'}
+	}
+
+	# Apply sign
+	if(~ $sign '-') {
+		offset=`{hoc -e 'int(-1 * '$offset')'}
+	}
+}
+
+# Calculate reference timestamp based on interval
+epoch=`{date -n}
+
+# Adjust epoch to interval start if no offset provided
+if(~ $#* 0) {
+	switch($interval) {
+	case weekly
+		# Get start of week (Monday)
+		# date outputs: Sun Nov 24 07:30:00 EST 2025
+		dow=`{date $epoch | awk '{print $1}'}
+		# Calculate days since Monday (Mon=0, Tue=1, ..., Sun=6)
+		daysback=0
+		switch($dow) {
+		case Mon; daysback=0
+		case Tue; daysback=1
+		case Wed; daysback=2
+		case Thu; daysback=3
+		case Fri; daysback=4
+		case Sat; daysback=5
+		case Sun; daysback=6
+		}
+		epoch=`{hoc -e 'int('$epoch' - ('$daysback' * 86400))'}
+	case monthly
+		# Get start of month (day 1)
+		# Extract year, month from current date
+		yearmonth=`{date $epoch | awk '{print $6 " " $2}'}
+		# Use date with format: Nov 1 2025
+		epoch=`{date -n `{echo $yearmonth | awk '{print $2 " 1 " $1}'}}
+	case yearly
+		# Get start of year (Jan 1)
+		year=`{date $epoch | awk '{print $6}'}
+		epoch=`{date -n 'Jan 1 '^$year}
+	}
+}
+
+targetepoch=`{hoc -e 'int('$epoch' + '$offset')'}
+
+# Get formatted date (e.g., "Wednesday 12 November 2025 22:11")
+datefull=`{date $targetepoch | awk '
+BEGIN {
+    m["Jan"]="January"; m["Feb"]="February"; m["Mar"]="March"
+    m["Apr"]="April"; m["May"]="May"; m["Jun"]="June"
+    m["Jul"]="July"; m["Aug"]="August"; m["Sep"]="September"
+    m["Oct"]="October"; m["Nov"]="November"; m["Dec"]="December"
+    d["Sun"]="Sunday"; d["Mon"]="Monday"; d["Tue"]="Tuesday"
+    d["Wed"]="Wednesday"; d["Thu"]="Thursday"; d["Fri"]="Friday"
+    d["Sat"]="Saturday"
+}
+{
+    split($4, t, ":")
+    print d[$1], $3, m[$2], $6, t[1]":"t[2]
+}'}
+
+# Format title based on titleformat setting
+switch($titleformat) {
+case full
+	title=`{echo $datefull | awk '{print tolower($0)}'}
+case date
+	title=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
+case day
+	title=`{echo $datefull | awk '{print tolower($1)}'}
+case year
+	title=`{echo $datefull | awk '{print $4}'}
+case *
+	# Default to full if invalid format specified
+	title=`{echo $datefull | awk '{print tolower($0)}'}
+}
+
+# Apply filter
+echo 'filter title:'''$"title'''' | 9p write denote/ctl
+
+# Check if there are any results
+results=`{9p read denote/index}
+
+# If no results, create new journal entry
+if(~ $#results 0) {
+    if(! ~ $signature '') {
+        echo '''journal/:'$"title'=='^$signature''' journal' | 9p write denote/new
+    }
+    if not {
+        echo '''journal/:'$"title''' journal' | 9p write denote/new
+    }
+}
+if not Denote 'denote:'$results(1)
+
+# Clear filter
+echo 'filter' | 9p write denote/ctl

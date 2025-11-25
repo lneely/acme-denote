@@ -8,12 +8,14 @@ The goal of this program is to provide an implementation of prot's [denote](http
 
 This README assumes you already have [plan9port](https://github.com/9fans/plan9port) installed.
 
-### Install
 ```sh
 mk install
 ```
 
+This installs `Denote` and all its extensions to $HOME/bin.
+
 ### Setup
+
 Start the Denote program by middle-clicking `Denote` anywhere in acme. This will open the `/Denote/` window. Notes are stored in `~/doc` by default, simply edit this in `main.go` to change your denote base directory.
 
 ## Usage
@@ -26,7 +28,6 @@ In Acme, you can highlight something like:
 
 Pass it as input to the `New` tag with the `2-1` chord. This will create a new Acme window with Denote frontmatter and an appropriate file path. **Important:** the actual file is not created until the `Put` command is executed. (Tags are optional but recommended).
 
-#### Create notes in subdirectories
 You can organize notes into subdirectories using the `/:` separator in the title:
 ```
 'journal/:today's entry' journal
@@ -39,6 +40,10 @@ The text before `/:` becomes the subdirectory path (e.g., `journal/`, `projects/
 ### Open a note
 
 First, be sure to set up the [plumbing rules](./PLUMBING.md). Then, simply right-click on any identifier in the `/Denote/` window.
+
+### Edit a note
+
+Edit a note just like any other text file. Use `Put` to save. The Denote metadata will be refreshed automatically.
 
 ### Delete a note
 
@@ -62,25 +67,9 @@ tag1
 
 Highlight this and pass it as input to the `Look` command with the `2-1` chord. This will filter the list of entries to those that match the search query. Executing `Look` without arguments resets the search filter. You may also right-click in the Denote window on titles or tags to jump between matches.
 
-### Journal
-
-Create or open today's journal:
-```
-Journal
-```
-
-Journal for other times:
-```
-Journal +1d        # tomorrow
-Journal -7d        # 7 days ago
-Journal +3h        # 3 hours from now
-Journal -30m       # 30 minutes ago
-```
-
-Supports: `d` (days), `h` (hours), `m` (minutes). You can use this to create multiple entries on the same day. To find an existing journal entry, use the search function in `Denote` described above. You can also pass the args in with the `2-1` chord.
-
 ### Metadata Editing
-You may edit metadata directly in the Denote window.
+
+Quality of life feature: you may edit metadata directly in the Denote window.
 
 ```
 -------------------------------------------------------
@@ -110,7 +99,7 @@ You may edit metadata directly in the Denote window.
 
 Middle-click `Put` to write all metadata changes. This will rename files and, when possible, update front matter.
 
-## Sync
+### Sync
 
 Sometimes it's necessary to update the Denote metadata from the filesystem. Middle-click `Sync` to do this.
 
@@ -126,3 +115,40 @@ You may change this by changing `ftype` in main.go.
 ## Encryption Support
 
 This program supports encrypted notes by integrating with [acme-crypt](https://github.com/lneely/acme-crypt). Set up the [plumbing rules](./PLUMBING.md) to read encrypted notes, and use `CryptPut` to write them.
+
+## Extensions
+
+Some extensions have also been ported.
+
+### Djournal
+
+Concept from prot's [denote-journal](https://github.com/protesilaos/denote-journal). While `Djournal` tries to stay as true as possible to the original program and be as feature-complete as possible, it is intentionally *not* an exact replica.
+
+Create or open today's journal entry (or this week's, month's, or year's, depending on `interval` configuration):
+
+```
+Djournal
+```
+
+Supports: `d` (days), `h` (hours), `m` (minutes). You can use this to create multiple entries on the same day. To find an existing journal entry, use the search function in `Denote` described above. You can also pass the args in with the `2-1` chord.
+
+Configure `Djournal` by editing the configuration options in the `Djournal` script.
+
+```
+# Journal interval: daily, weekly, monthly, yearly
+interval=daily
+
+# Title format: full, date, day, year
+# Examples:
+#   full: "wednesday 12 november 2025 22:11"
+#   date: "wednesday 12 november 2025"
+#   day:  "wednesday"
+#   year: "2025"
+titleformat=full
+
+# Signature (optional, added to filename as ==signature)
+signature=''
+```
+
+### Merge
+
