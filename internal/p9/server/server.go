@@ -10,6 +10,7 @@ follows:
 		new					(write-only) Create new note (write "'title' tag1,tag2")
 		n/					(directory)  Notes directory
 			<identifier>/   (directory)  Unique denote file identifier
+				backlinks	(read-only)  Notes that link to this note (same format as index)
 				ctl			(write-only) Control file (publish rename, update, and delete events)
 				keywords	(read-write) File tags
 				path		(read-write) Path on underlying filesystem
@@ -30,6 +31,7 @@ Notes:
 package fs
 
 import (
+	"denote/internal/disk"
 	"denote/internal/metadata"
 	"fmt"
 	"io"
@@ -65,7 +67,7 @@ const (
 	qidCtl      = 999995
 )
 
-var fileNames = []string{"path", "title", "keywords", "ctl"}
+var fileNames = []string{"path", "title", "keywords", "ctl", "backlinks"}
 
 // Callbacks for note operations
 type Callbacks struct {
@@ -77,6 +79,7 @@ type Callbacks struct {
 
 type server struct {
 	notes         metadata.Results
+	denoteDir     string
 	mu            sync.RWMutex
 	callbacks     Callbacks
 	filterQuery   string
@@ -112,13 +115,14 @@ func findNote(identifier string) (*metadata.Metadata, error) {
 // Getdir returns the denote directory
 // StartServer starts the 9P fileserver in the background with pre-loaded metadata.
 // initialData should contain all notes to be served - typically loaded by sync.LoadAll().
-func StartServer(initialData metadata.Results, callbacks Callbacks) error {
+func StartServer(initialData metadata.Results, denoteDir string, callbacks Callbacks) error {
 	if srv != nil {
 		return fmt.Errorf("server already running")
 	}
 
 	srv = &server{
 		notes:     initialData,
+		denoteDir: denoteDir,
 		callbacks: callbacks,
 	}
 
@@ -799,6 +803,16 @@ func (s *server) getIndexContent() string {
 	return string(filtered.Bytes())
 }
 
+func (s *server) getBacklinks(targetID string) string {
+	s.mu.RLock()
+	notes := s.notes
+	denoteDir := s.denoteDir
+	s.mu.RUnlock()
+
+	results := disk.FindBacklinks(targetID, denoteDir, notes)
+	return string(results.Bytes())
+}
+
 func (s *server) getFileContent(path string) string {
 	if path == "/index" {
 		return s.getIndexContent()
@@ -824,6 +838,8 @@ func (s *server) getFileContent(path string) string {
 		return note.Title
 	case "keywords":
 		return strings.Join(note.Tags, ",")
+	case "backlinks":
+		return s.getBacklinks(noteID)
 	}
 	return ""
 }

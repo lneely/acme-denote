@@ -4,7 +4,7 @@ the denote metadata from the underlying filesystem, and refreshing the in-memory
 with denote front matter use the front matter, and all other files use the metadata encoded in
 the file name.
 */
-package sync
+package disk
 
 import (
 	"denote/internal/metadata"

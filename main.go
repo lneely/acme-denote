@@ -1,10 +1,10 @@
 package main
 
 import (
+	"denote/internal/disk"
 	"denote/internal/metadata"
 	p9client "denote/internal/p9/client"
 	p9server "denote/internal/p9/server"
-	"denote/internal/sync"
 	"fmt"
 	"log"
 	"os"
@@ -208,7 +208,7 @@ func main() {
 	}
 
 	// Load metadata from filesystem
-	notes, err := sync.LoadAll(denoteDir)
+	notes, err := disk.LoadAll(denoteDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to load notes: %v\n", err)
 	}
@@ -222,28 +222,28 @@ func main() {
 		},
 		OnUpdate: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return sync.HandleUpdateEvent(f, identifier, denoteDir)
+				return disk.HandleUpdateEvent(f, identifier, denoteDir)
 			})
 		},
 		OnRename: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return sync.HandleRenameEvent(f, identifier, denoteDir)
+				return disk.HandleRenameEvent(f, identifier, denoteDir)
 			})
 		},
 		OnDelete: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return sync.HandleDeleteEvent(f, identifier, denoteDir)
+				return disk.HandleDeleteEvent(f, identifier, denoteDir)
 			})
 		},
 	}
 
 	// 9p server startup with pre-loaded data and callbacks
-	if err := p9server.StartServer(notes, callbacks); err != nil {
+	if err := p9server.StartServer(notes, denoteDir, callbacks); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to start fileserver: %v\n", err)
 	}
 
 	// start acme log watcher
-	go sync.WatchAcmeLog()
+	go disk.WatchAcmeLog()
 
 	// open window
 	if w = acme.Show(wname); w == nil {
@@ -337,7 +337,7 @@ func main() {
 				w.Ctl("dot=addr")
 				w.Ctl("show")
 			case "Sync":
-				if err := sync.SyncAll(); err != nil {
+				if err := disk.SyncAll(); err != nil {
 					log.Printf("sync error: %v", err)
 				}
 				refreshWindowWithDefaults(w)

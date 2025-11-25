@@ -1,4 +1,4 @@
-package sync
+package disk
 
 import (
 	"denote/internal/metadata"
