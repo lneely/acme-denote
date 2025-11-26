@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -396,7 +397,7 @@ func TestParseFilename(t *testing.T) {
 					tt.path, got.Title, tt.wantTitle)
 			}
 
-			if !SlicesEqual(got.Tags, tt.wantTags) {
+			if !slices.Equal(got.Tags, tt.wantTags) {
 				t.Errorf("ParseFilename(%q).Tags = %v, want %v",
 					tt.path, got.Tags, tt.wantTags)
 			}
@@ -764,66 +765,9 @@ func TestResultsFromString(t *testing.T) {
 				if got[i].Title != tt.want[i].Title {
 					t.Errorf("Result[%d].Title = %q, want %q", i, got[i].Title, tt.want[i].Title)
 				}
-				if !SlicesEqual(got[i].Tags, tt.want[i].Tags) {
+				if !slices.Equal(got[i].Tags, tt.want[i].Tags) {
 					t.Errorf("Result[%d].Tags = %v, want %v", i, got[i].Tags, tt.want[i].Tags)
 				}
-			}
-		})
-	}
-}
-
-// TestSlicesEqual validates slice comparison
-func TestSlicesEqual(t *testing.T) {
-	tests := []struct {
-		name string
-		a    []string
-		b    []string
-		want bool
-	}{
-		{
-			name: "equal slices",
-			a:    []string{"a", "b", "c"},
-			b:    []string{"a", "b", "c"},
-			want: true,
-		},
-		{
-			name: "different length",
-			a:    []string{"a", "b"},
-			b:    []string{"a", "b", "c"},
-			want: false,
-		},
-		{
-			name: "different content",
-			a:    []string{"a", "b", "c"},
-			b:    []string{"a", "x", "c"},
-			want: false,
-		},
-		{
-			name: "both nil",
-			a:    nil,
-			b:    nil,
-			want: true,
-		},
-		{
-			name: "both empty",
-			a:    []string{},
-			b:    []string{},
-			want: true,
-		},
-		{
-			// slices.Equal treats nil and empty slices as equal (both have len 0)
-			name: "nil vs empty",
-			a:    nil,
-			b:    []string{},
-			want: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := SlicesEqual(tt.a, tt.b)
-			if got != tt.want {
-				t.Errorf("SlicesEqual(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
 			}
 		})
 	}

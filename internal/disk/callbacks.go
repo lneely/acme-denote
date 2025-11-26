@@ -1,15 +1,15 @@
 package disk
 
 import (
-	"denote/internal/metadata"
+	"denote/pkg/metadata"
 	p9client "denote/internal/p9/client"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"9fans.net/go/acme"
 	"9fans.net/go/plan9/client"
 )
 
@@ -100,61 +100,13 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 }
 
 // HandleRenameEvent handles 'r' events from the 9P server.
-// When path is updated in 9P, rename the file on the filesystem.
+// Delegates to Drename binary to perform the actual rename.
 func HandleRenameEvent(f *client.Fsys, identifier, denoteDir string) error {
-	// Get new path from 9P server.
-	newPath, err := p9client.ReadFile(f, "n/"+identifier+"/path")
-	if err != nil {
-		return fmt.Errorf("failed to read path: %w", err)
+	cmd := exec.Command("Drename", "--id="+identifier)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rename failed: %w", err)
 	}
-
-	if newPath == "" {
-		// Path is not set yet. This can happen during note creation.
-		return nil
-	}
-
-	// Find old file on disk (matches with or without signature).
-	pattern := filepath.Join(denoteDir, identifier+"*")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return fmt.Errorf("failed to find file: %w", err)
-	}
-
-	if len(matches) == 0 {
-		// File doesn't exist on disk. Nothing to rename.
-		return nil
-	}
-	oldPath := matches[0]
-
-	// Rename if different.
-	if oldPath != newPath {
-		newPath = filepath.Clean(newPath)
-		absNew, err := filepath.Abs(newPath)
-		if err != nil {
-			return fmt.Errorf("failed to resolve new path: %w", err)
-		}
-		absBase, err := filepath.Abs(denoteDir)
-		if err != nil {
-			return fmt.Errorf("failed to resolve base directory: %w", err)
-		}
-		if !strings.HasPrefix(absNew, absBase) {
-			return fmt.Errorf("path traversal attempt: path outside base")
-		}
-
-		if err := os.Rename(oldPath, newPath); err != nil {
-			return fmt.Errorf("failed to rename file from %s to %s: %w", oldPath, newPath, err)
-		}
-
-		// Update window tag for renamed file
-		if wins, err := acme.Windows(); err == nil {
-			for _, w := range wins {
-				if err := updateWindowName(w.ID, oldPath, newPath); err != nil {
-					log.Printf("failed to update window %d: %v", w.ID, err)
-				}
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -190,30 +142,6 @@ func HandleDeleteEvent(f *client.Fsys, identifier, denoteDir string) error {
 
 	if err := os.Remove(matches[0]); err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
-	}
-
-	return nil
-}
-
-// updateWindowName updates the window tag name from oldPath to newPath
-func updateWindowName(id int, oldPath, newPath string) error {
-	win, err := acme.Open(id, nil)
-	if err != nil {
-		return err
-	}
-	defer win.CloseFiles()
-
-	tag, err := win.ReadAll("tag")
-	if err != nil {
-		return err
-	}
-
-	if !strings.Contains(string(tag), oldPath) {
-		return nil // Window doesn't have this path, skip
-	}
-
-	if err := win.Ctl("name " + newPath); err != nil {
-		return fmt.Errorf("failed to rename window: %w", err)
 	}
 
 	return nil

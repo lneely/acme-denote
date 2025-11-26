@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -346,7 +347,7 @@ identifier: 20240101T120000
 				t.Errorf("ParseFrontMatter().Title = %q, want %q", got.Title, tt.wantTitle)
 			}
 
-			if !SlicesEqual(got.Tags, tt.wantTags) {
+			if !slices.Equal(got.Tags, tt.wantTags) {
 				t.Errorf("ParseFrontMatter().Tags = %v, want %v", got.Tags, tt.wantTags)
 			}
 
@@ -608,12 +609,12 @@ func TestFileExtensions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.fileType, func(t *testing.T) {
-			got, ok := FileExtensions[tt.fileType]
+			got, ok := fileExtensions[tt.fileType]
 			if !ok {
-				t.Errorf("FileExtensions[%q] not found", tt.fileType)
+				t.Errorf("fileExtensions[%q] not found", tt.fileType)
 			}
 			if got != tt.want {
-				t.Errorf("FileExtensions[%q] = %q, want %q", tt.fileType, got, tt.want)
+				t.Errorf("fileExtensions[%q] = %q, want %q", tt.fileType, got, tt.want)
 			}
 		})
 	}
@@ -632,7 +633,7 @@ func TestFrontMatterRoundTrip(t *testing.T) {
 			content := Generate(title, "", tags, fileType, identifier)
 
 			// Parse it back
-			ext := FileExtensions[fileType]
+			ext := fileExtensions[fileType]
 			fm, err := ParseFrontMatter(content, ext)
 			if err != nil {
 				t.Fatalf("ParseFrontMatter() error = %v", err)
@@ -642,7 +643,7 @@ func TestFrontMatterRoundTrip(t *testing.T) {
 			if fm.Title != title {
 				t.Errorf("Parsed title = %q, want %q", fm.Title, title)
 			}
-			if !SlicesEqual(fm.Tags, tags) {
+			if !slices.Equal(fm.Tags, tags) {
 				t.Errorf("Parsed tags = %v, want %v", fm.Tags, tags)
 			}
 			if fm.Identifier != identifier {
@@ -672,7 +673,7 @@ func TestFrontMatterRoundTrip(t *testing.T) {
 			if fm2.Title != newTitle {
 				t.Errorf("After update title = %q, want %q", fm2.Title, newTitle)
 			}
-			if !SlicesEqual(fm2.Tags, newTags) {
+			if !slices.Equal(fm2.Tags, newTags) {
 				t.Errorf("After update tags = %v, want %v", fm2.Tags, newTags)
 			}
 		})

@@ -7,7 +7,7 @@ the file name.
 package disk
 
 import (
-	"denote/internal/metadata"
+	"denote/pkg/metadata"
 	p9client "denote/internal/p9/client"
 	"fmt"
 	"log"

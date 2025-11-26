@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -79,12 +78,6 @@ func (es Results) FromString(data string) (Results, error) {
 	}
 
 	return results, nil
-}
-
-// SlicesEqual compares two string slices for equality.
-// Deprecated: Use slices.Equal from standard library instead.
-func SlicesEqual(a, b []string) bool {
-	return slices.Equal(a, b)
 }
 
 type SortBy string
@@ -247,7 +240,7 @@ func BuildFilename(identifier, signature, title string, keywords []string, ext s
 // Returns (path, content).
 func GenerateNote(dir, title, signature string, keywords []string, fileType string) (string, string) {
 	identifier := GenerateIdentifier()
-	ext := FileExtensions[fileType]
+	ext := fileExtensions[fileType]
 	filename := BuildFilename(identifier, signature, title, keywords, ext)
 	path := filepath.Join(dir, filename)
 	content := Generate(title, signature, keywords, fileType, identifier)

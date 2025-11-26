@@ -32,7 +32,7 @@ package fs
 
 import (
 	"denote/internal/disk"
-	"denote/internal/metadata"
+	"denote/pkg/metadata"
 	"fmt"
 	"io"
 	"net"

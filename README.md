@@ -103,6 +103,21 @@ Middle-click `Put` to write all metadata changes. This will rename files and, wh
 
 Reload all notes from disk, discarding any uncommitted changes in the 9P metadata. Middle-click `Get` to do this. This is useful when notes are modified outside of Acme or when you want to discard metadata changes.
 
+### Drename
+
+Update note metadata (title, tags, signature) from any note window:
+
+```
+Drename 'new title' tag1,tag2 ==newsig
+```
+
+This command works for all files in the denote directory:
+- **Regular notes** (.md, .org, .txt): Updates frontmatter in window + renames file
+- **Binary files** (PDFs, images): Just renames file
+- **Encrypted files** (.gpg): Updates frontmatter in window + renames file
+
+The window must be saved (Put/CryptPut) after Drename to persist changes to disk.
+
 ## File Format
 
 By default notes are markdown files with YAML frontmatter:

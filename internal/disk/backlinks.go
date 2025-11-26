@@ -2,7 +2,7 @@ package disk
 
 import (
 	"bytes"
-	"denote/internal/metadata"
+	"denote/pkg/metadata"
 	"os/exec"
 	"path/filepath"
 	"strings"

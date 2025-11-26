@@ -44,9 +44,9 @@ signature:  %s
 `,
 }
 
-// FileExtensions contains the list of file extensions
+// fileExtensions contains the list of file extensions
 // for which Denote should add front matter.
-var FileExtensions = map[string]string{
+var fileExtensions = map[string]string{
 	"org":     ".org",
 	"md-yaml": ".md",
 	"md-toml": ".md",

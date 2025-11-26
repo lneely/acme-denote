@@ -2,7 +2,7 @@ package main
 
 import (
 	"denote/internal/disk"
-	"denote/internal/metadata"
+	"denote/pkg/metadata"
 	p9client "denote/internal/p9/client"
 	p9server "denote/internal/p9/server"
 	"fmt"
@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -552,7 +553,7 @@ func applyIndexChanges(f *client.Fsys, current, updated metadata.Results) error 
 
 		// Check if anything changed
 		titleChanged := orig.Title != upd.Title
-		tagsChanged := !metadata.SlicesEqual(orig.Tags, upd.Tags)
+		tagsChanged := !slices.Equal(orig.Tags, upd.Tags)
 
 		if titleChanged || tagsChanged {
 			// Write both title and keywords

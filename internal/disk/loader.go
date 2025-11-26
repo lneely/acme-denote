@@ -1,7 +1,7 @@
 package disk
 
 import (
-	"denote/internal/metadata"
+	"denote/pkg/metadata"
 	"fmt"
 	"os"
 	"path/filepath"
