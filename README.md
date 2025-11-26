@@ -73,7 +73,7 @@ Quality of life feature: you may edit metadata directly in the Denote window.
 
 ```
 -------------------------------------------------------
-/Denote/ Del Snarf | Look New Put Remove Sync
+/Denote/ Del Snarf | Look New Put Remove Get
 -------------------------------------------------------
 20251112T221141 | my dummy file 7 | dummy
 20251112T221140 | my dummy file 6 | dummy
@@ -86,7 +86,7 @@ Quality of life feature: you may edit metadata directly in the Denote window.
 
 ```
 -------------------------------------------------------
-/Denote/ Del Snarf | Look New Put Remove Sync
+/Denote/ Del Snarf | Look New Put Remove Get
 -------------------------------------------------------
 20251112T221141 | you can edit | dummy
 20251112T221140 | the titles | dummy
@@ -99,9 +99,9 @@ Quality of life feature: you may edit metadata directly in the Denote window.
 
 Middle-click `Put` to write all metadata changes. This will rename files and, when possible, update front matter.
 
-### Sync
+### Get
 
-Sometimes it's necessary to update the Denote metadata from the filesystem. Middle-click `Sync` to do this.
+Reload all notes from disk, discarding any uncommitted changes in the 9P metadata. Middle-click `Get` to do this. This is useful when notes are modified outside of Acme or when you want to discard metadata changes.
 
 ## File Format
 

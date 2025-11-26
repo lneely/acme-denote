@@ -258,7 +258,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if _, err = w.Write("tag", []byte("New Put Remove Sync")); err != nil {
+	if _, err = w.Write("tag", []byte("New Put Remove Get")); err != nil {
 		w.Del(true)
 		log.Fatal(fmt.Errorf("failed to set tag: %w", err))
 	}
@@ -337,9 +337,9 @@ func main() {
 				w.Addr("#0")
 				w.Ctl("dot=addr")
 				w.Ctl("show")
-			case "Sync":
-				if err := disk.SyncAll(); err != nil {
-					log.Printf("sync error: %v", err)
+			case "Get":
+				if err := disk.GetAll(); err != nil {
+					log.Printf("get error: %v", err)
 				}
 				refreshWindowWithDefaults(w)
 				w.Addr("#0")

@@ -164,8 +164,8 @@ func syncFrontMatter(path, identifier string) error {
 	})
 }
 
-// SyncAll syncs all notes in the denote directory
-func SyncAll() error {
+// GetAll reloads all notes from disk to 9P (discards uncommitted 9P changes)
+func GetAll() error {
 	return p9client.With9P(func(f *client.Fsys) error {
 		// Read index to get all identifiers
 		indexFid, err := f.Open("index", 0)
@@ -247,14 +247,14 @@ func SyncAll() error {
 				}
 			}
 
-			// Route to appropriate sync function based on file type
+			// Route to appropriate get function based on file type
 			if SupportsFrontMatter(path) {
-				if err := syncDenoteFile(f, path, identifier); err != nil {
-					log.Printf("sync: failed to sync denote file %s: %v", identifier, err)
+				if err := getDenoteFile(f, path, identifier); err != nil {
+					log.Printf("get: failed to get denote file %s: %v", identifier, err)
 				}
 			} else {
-				if err := syncNonDenoteFile(f, path, identifier); err != nil {
-					log.Printf("sync: failed to sync non-denote file %s: %v", identifier, err)
+				if err := getNonDenoteFile(f, path, identifier); err != nil {
+					log.Printf("get: failed to get non-denote file %s: %v", identifier, err)
 				}
 			}
 		}
@@ -263,8 +263,8 @@ func SyncAll() error {
 	})
 }
 
-// syncDenoteFile syncs a text file with front matter
-func syncDenoteFile(f *client.Fsys, path, identifier string) error {
+// getDenoteFile reloads a text file with front matter from disk to 9P
+func getDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract front matter from file
 	fm, err := ExtractFrontMatter(path)
 	if err != nil {
@@ -290,17 +290,11 @@ func syncDenoteFile(f *client.Fsys, path, identifier string) error {
 		return err
 	}
 
-	// Trigger rename event
-	ctlPath := "n/" + identifier + "/ctl"
-	if err := p9client.WriteFile(f, ctlPath, "r"); err != nil {
-		return err
-	}
-
 	return nil
 }
 
-// syncNonDenoteFile syncs a binary file (metadata from filename)
-func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
+// getNonDenoteFile reloads a binary file from disk to 9P (metadata from filename)
+func getNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract metadata from filename
 	meta := metadata.ParseFilename(path)
 
@@ -322,8 +316,6 @@ func syncNonDenoteFile(f *client.Fsys, path, identifier string) error {
 	if err := p9client.WriteFile(f, signaturePath, meta.Signature); err != nil {
 		return err
 	}
-
-	// Don't trigger rename - filename is already correct
 
 	return nil
 }
