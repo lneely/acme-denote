@@ -36,14 +36,14 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 	// Only update frontmatter if file exists (skip if not yet created via Put)
 	if _, err := os.Stat(path); err == nil && SupportsFrontMatter(path) {
 		ext := strings.ToLower(filepath.Ext(path))
-		var fileType string
+		var fileType metadata.FileType
 		switch ext {
 		case ".org":
-			fileType = "org"
+			fileType = metadata.FileTypeOrg
 		case ".md":
-			fileType = "md-yaml"
+			fileType = metadata.FileTypeMdYaml
 		case ".txt":
-			fileType = "txt"
+			fileType = metadata.FileTypeTxt
 		}
 
 		fm := &metadata.FrontMatter{

@@ -67,10 +67,10 @@ func UpdateFrontMatter(path string, fm *metadata.FrontMatter) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Update front matter (pure function)
-	newContent, err := metadata.UpdateFrontMatter(string(content), fm)
+	// Apply front matter to content
+	newContent, err := metadata.Apply(string(content), fm)
 	if err != nil {
-		return fmt.Errorf("failed to update front matter: %w", err)
+		return fmt.Errorf("failed to apply front matter: %w", err)
 	}
 
 	// Write back to file

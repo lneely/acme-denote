@@ -190,15 +190,19 @@ func windowMode(args []string) error {
 
 	// Update frontmatter if applicable
 	if supportsFrontmatter && len(body) > 0 {
-		// Create new frontmatter
-		fm := &metadata.FrontMatter{
-			Title:     title,
-			Tags:      tags,
-			Signature: signature,
+		// Parse existing frontmatter to preserve Identifier and FileType
+		existing, err := metadata.ParseFrontMatter(string(body), ext)
+		if err != nil {
+			return fmt.Errorf("failed to parse existing frontmatter: %w", err)
 		}
 
-		// Update frontmatter in content
-		newContent, err := metadata.UpdateFrontMatter(string(body), fm)
+		// Update only the fields that changed from rename
+		existing.Title = title
+		existing.Tags = tags
+		existing.Signature = signature
+
+		// Apply updated frontmatter to content
+		newContent, err := metadata.Apply(string(body), existing)
 		if err != nil {
 			return fmt.Errorf("failed to update frontmatter: %w", err)
 		}

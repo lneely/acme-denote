@@ -3,7 +3,6 @@ package metadata
 import (
 	"regexp"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 )
@@ -771,61 +770,4 @@ func TestResultsFromString(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestGenerateNote validates note generation (integration test)
-func TestGenerateNote(t *testing.T) {
-	t.Run("without signature", func(t *testing.T) {
-		dir := "/tmp/notes"
-		title := "Test Note"
-		signature := ""
-		keywords := []string{"test", "example"}
-		fileType := "md-yaml"
-
-		path, content := GenerateNote(dir, title, signature, keywords, fileType)
-
-		// Validate path format
-		if !strings.HasPrefix(path, dir+"/") {
-			t.Errorf("GenerateNote() path = %q, should start with %q", path, dir+"/")
-		}
-
-		// Validate filename contains identifier and title
-		if !strings.Contains(path, "--test-note__test_example.md") {
-			t.Errorf("GenerateNote() path = %q, should contain proper filename", path)
-		}
-
-		// Validate content has front matter
-		if !strings.Contains(content, "---") {
-			t.Errorf("GenerateNote() content should contain YAML front matter")
-		}
-		if !strings.Contains(content, "title:") {
-			t.Errorf("GenerateNote() content should contain title field")
-		}
-		if !strings.Contains(content, "[test, example]") {
-			t.Errorf("GenerateNote() content should contain formatted tags")
-		}
-	})
-
-	t.Run("with signature", func(t *testing.T) {
-		dir := "/tmp/notes"
-		title := "Test Note"
-		signature := "hello"
-		keywords := []string{"test"}
-		fileType := "md-yaml"
-
-		path, content := GenerateNote(dir, title, signature, keywords, fileType)
-
-		// Validate filename contains signature
-		if !strings.Contains(path, "==hello--test-note__test.md") {
-			t.Errorf("GenerateNote() path = %q, should contain signature ==hello", path)
-		}
-
-		// Validate content has signature in front matter
-		if !strings.Contains(content, "signature:") {
-			t.Errorf("GenerateNote() content should contain signature field")
-		}
-		if !strings.Contains(content, "signature:  hello") {
-			t.Errorf("GenerateNote() content should contain signature value")
-		}
-	})
 }

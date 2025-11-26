@@ -236,13 +236,3 @@ func BuildFilename(identifier, signature, title string, keywords []string, ext s
 	return fmt.Sprintf("%s%s--%s%s%s", identifier, signaturePart, titleSlug, keywordsPart, ext)
 }
 
-// GenerateNote creates a new note with generated identifier and content.
-// Returns (path, content).
-func GenerateNote(dir, title, signature string, keywords []string, fileType string) (string, string) {
-	identifier := GenerateIdentifier()
-	ext := fileExtensions[fileType]
-	filename := BuildFilename(identifier, signature, title, keywords, ext)
-	path := filepath.Join(dir, filename)
-	content := Generate(title, signature, keywords, fileType, identifier)
-	return path, content
-}

@@ -8,15 +8,15 @@ import (
 )
 
 // Templates for denote frontmatter (org, md, txt)
-var templates = map[string]string{
-	"org": `#+title:      %s
+var templates = map[FileType]string{
+	FileTypeOrg: `#+title:      %s
 #+date:       %s
 #+filetags:   %s
 #+identifier: %s
 #+signature:  %s
 
 `,
-	"md-yaml": `---
+	FileTypeMdYaml: `---
 title:      %s
 date:       %s
 tags:       %s
@@ -25,7 +25,7 @@ signature:  %s
 ---
 
 `,
-	"md-toml": `+++
+	FileTypeMdToml: `+++
 title      = %s
 date       = %s
 tags       = %s
@@ -34,7 +34,7 @@ signature  = %s
 +++
 
 `,
-	"txt": `title:      %s
+	FileTypeTxt: `title:      %s
 date:       %s
 tags:       %s
 identifier: %s
@@ -44,24 +44,39 @@ signature:  %s
 `,
 }
 
+// FileType represents supported file formats for denote notes
+type FileType string
+
+const (
+	FileTypeOrg    FileType = "org"
+	FileTypeMdYaml FileType = "md-yaml"
+	FileTypeMdToml FileType = "md-toml"
+	FileTypeTxt    FileType = "txt"
+)
+
 // fileExtensions contains the list of file extensions
 // for which Denote should add front matter.
-var fileExtensions = map[string]string{
-	"org":     ".org",
-	"md-yaml": ".md",
-	"md-toml": ".md",
-	"txt":     ".txt",
+var fileExtensions = map[FileType]string{
+	FileTypeOrg:    ".org",
+	FileTypeMdYaml: ".md",
+	FileTypeMdToml: ".md",
+	FileTypeTxt:    ".txt",
+}
+
+// GetExtension returns the file extension for a given file type.
+func GetExtension(fileType FileType) string {
+	return fileExtensions[fileType]
 }
 
 // FormatTags formats tags according to file type
-func FormatTags(tags []string, fileType string) string {
+func FormatTags(tags []string, fileType FileType) string {
 	if len(tags) == 0 {
 		return ""
 	}
 	switch fileType {
-	case "org":
+	case FileTypeOrg:
 		return ":" + strings.Join(tags, ":") + ":"
-	case "md-yaml", "md-toml":
+	case FileTypeMdYaml, FileTypeMdToml:
 		return "[" + strings.Join(tags, ", ") + "]"
 	default:
 		return strings.Join(tags, " ")
@@ -74,7 +89,22 @@ type FrontMatter struct {
 	Tags       []string
 	Identifier string
 	Signature  string
-	FileType   string // org, md-yaml, md-toml, txt
+	FileType   FileType
+}
+
+// Bytes returns the formatted frontmatter content as bytes
+func (fm *FrontMatter) Bytes() []byte {
+	template := templates[fm.FileType]
+	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
+
+	// For org-mode, wrap date in brackets for timestamp
+	if fm.FileType == FileTypeOrg {
+		dateStr = "[" + dateStr + "]"
+	}
+
+	keywordsStr := FormatTags(fm.Tags, fm.FileType)
+	content := fmt.Sprintf(template, fm.Title, dateStr, keywordsStr, fm.Identifier, fm.Signature)
+	return []byte(content)
 }
 
 // ParseFrontMatter extracts front matter from file content.
@@ -87,7 +117,7 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 
 	switch ext {
 	case ".org":
-		fm.FileType = "org"
+		fm.FileType = FileTypeOrg
 		if m := regexp.MustCompile(`(?m)^#\+title:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Title = strings.TrimSpace(m[1])
 		}
@@ -105,7 +135,7 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 		// Try YAML first
 		yamlRe := regexp.MustCompile(`(?ms)^---\n(.*?)\n---`)
 		if m := yamlRe.FindStringSubmatch(text); m != nil {
-			fm.FileType = "md-yaml"
+			fm.FileType = FileTypeMdYaml
 			yamlContent := m[1]
 			if m := regexp.MustCompile(`(?m)^title:[ \t]*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
 				fm.Title = strings.TrimSpace(m[1])
@@ -127,7 +157,7 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 			// Try TOML
 			tomlRe := regexp.MustCompile(`(?ms)^\+\+\+\n(.*?)\n\+\+\+`)
 			if m := tomlRe.FindStringSubmatch(text); m != nil {
-				fm.FileType = "md-toml"
+				fm.FileType = FileTypeMdToml
 				tomlContent := m[1]
 				if m := regexp.MustCompile(`(?m)^title[ \t]*=[ \t]*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
 					fm.Title = strings.TrimSpace(m[1])
@@ -149,7 +179,7 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 		}
 
 	case ".txt":
-		fm.FileType = "txt"
+		fm.FileType = FileTypeTxt
 		if m := regexp.MustCompile(`(?m)^title:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Title = strings.TrimSpace(m[1])
 		}
@@ -167,25 +197,15 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 	return fm, nil
 }
 
-// UpdateFrontMatter updates front matter in file content and returns the new content.
+// Apply applies front matter to file content, replacing existing front matter if present.
 // originalContent is the current file content, fm is the new front matter to apply.
-func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) {
+func Apply(originalContent string, fm *FrontMatter) (string, error) {
 	text := originalContent
-
-	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
-	keywordsStr := FormatTags(fm.Tags, fm.FileType)
-
-	// For org-mode, wrap date in brackets for timestamp
-	if fm.FileType == "org" {
-		dateStr = "[" + dateStr + "]"
-	}
-
-	template := templates[fm.FileType]
-	newFrontMatter := fmt.Sprintf(template, fm.Title, dateStr, keywordsStr, fm.Identifier, fm.Signature)
+	newFrontMatter := string(fm.Bytes())
 
 	var newText string
 	switch fm.FileType {
-	case "org":
+	case FileTypeOrg:
 		// Find end of front matter (first blank line or non-#+ line)
 		lines := strings.Split(text, "\n")
 		endIdx := 0
@@ -205,7 +225,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 			newText = newFrontMatter + text
 		}
 
-	case "md-yaml":
+	case FileTypeMdYaml:
 		// Replace YAML front matter (match trailing blank lines to avoid duplication)
 		re := regexp.MustCompile(`(?s)^---\n.*?\n---\n\n*`)
 		if re.MatchString(text) {
@@ -214,7 +234,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 			newText = newFrontMatter + text
 		}
 
-	case "md-toml":
+	case FileTypeMdToml:
 		// Replace TOML front matter (match trailing blank lines to avoid duplication)
 		re := regexp.MustCompile(`(?s)^\+\+\+\n.*?\n\+\+\+\n\n*`)
 		if re.MatchString(text) {
@@ -223,7 +243,7 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 			newText = newFrontMatter + text
 		}
 
-	case "txt":
+	case FileTypeTxt:
 		// Replace text front matter (match trailing blank lines to avoid duplication)
 		re := regexp.MustCompile(`(?s)^title:.*?\n-+\n\n*`)
 		if re.MatchString(text) {
@@ -238,16 +258,13 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 	return newText, nil
 }
 
-// Generate generates front matter content for given parameters
-func Generate(title, signature string, tags []string, fileType, identifier string) string {
-	template := templates[fileType]
-	dateStr := time.Now().Format("2006-01-02 Mon 15:04")
-
-	// For org-mode, wrap date in brackets for timestamp
-	if fileType == "org" {
-		dateStr = "[" + dateStr + "]"
+// NewFrontMatter creates a new FrontMatter struct from given parameters
+func NewFrontMatter(title, signature string, tags []string, fileType FileType, identifier string) *FrontMatter {
+	return &FrontMatter{
+		Title:      title,
+		Tags:       tags,
+		Identifier: identifier,
+		Signature:  signature,
+		FileType:   fileType,
 	}
-
-	keywordsStr := FormatTags(tags, fileType)
-	return fmt.Sprintf(template, title, dateStr, keywordsStr, identifier, signature)
 }

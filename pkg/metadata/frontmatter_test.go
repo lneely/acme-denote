@@ -12,73 +12,73 @@ func TestFormatTags(t *testing.T) {
 	tests := []struct {
 		name     string
 		tags     []string
-		fileType string
+		fileType FileType
 		want     string
 	}{
 		{
 			name:     "org with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: "org",
+			fileType: FileTypeOrg,
 			want:     ":tag1:tag2:",
 		},
 		{
 			name:     "org with single tag",
 			tags:     []string{"single"},
-			fileType: "org",
+			fileType: FileTypeOrg,
 			want:     ":single:",
 		},
 		{
 			name:     "org with empty tags",
 			tags:     []string{},
-			fileType: "org",
+			fileType: FileTypeOrg,
 			want:     "",
 		},
 		{
 			name:     "md-yaml with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: "md-yaml",
+			fileType: FileTypeMdYaml,
 			want:     "[tag1, tag2]",
 		},
 		{
 			name:     "md-yaml with single tag",
 			tags:     []string{"single"},
-			fileType: "md-yaml",
+			fileType: FileTypeMdYaml,
 			want:     "[single]",
 		},
 		{
 			name:     "md-yaml with empty tags",
 			tags:     []string{},
-			fileType: "md-yaml",
+			fileType: FileTypeMdYaml,
 			want:     "",
 		},
 		{
 			name:     "md-toml with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: "md-toml",
+			fileType: FileTypeMdToml,
 			want:     "[tag1, tag2]",
 		},
 		{
 			name:     "md-toml with empty tags",
 			tags:     []string{},
-			fileType: "md-toml",
+			fileType: FileTypeMdToml,
 			want:     "",
 		},
 		{
 			name:     "txt with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: "txt",
+			fileType: FileTypeTxt,
 			want:     "tag1 tag2",
 		},
 		{
 			name:     "txt with single tag",
 			tags:     []string{"single"},
-			fileType: "txt",
+			fileType: FileTypeTxt,
 			want:     "single",
 		},
 		{
 			name:     "txt with empty tags",
 			tags:     []string{},
-			fileType: "txt",
+			fileType: FileTypeTxt,
 			want:     "",
 		},
 	}
@@ -93,22 +93,22 @@ func TestFormatTags(t *testing.T) {
 	}
 }
 
-// TestGenerate validates front matter generation for all file types
+// TestFrontMatterBytes validates front matter formatting for all file types
 // Maps to dt-denote--format-front-matter from original tests
-func TestGenerate(t *testing.T) {
+func TestFrontMatterBytes(t *testing.T) {
 	identifier := "20240101T120000"
 	title := "Test Note"
 	tags := []string{"tag1", "tag2"}
 
 	tests := []struct {
 		name            string
-		fileType        string
+		fileType        FileType
 		wantContains    []string
 		wantNotContains []string
 	}{
 		{
 			name:     "org format",
-			fileType: "org",
+			fileType: FileTypeOrg,
 			wantContains: []string{
 				"#+title:      Test Note",
 				"#+filetags:   :tag1:tag2:",
@@ -118,7 +118,7 @@ func TestGenerate(t *testing.T) {
 		},
 		{
 			name:     "md-yaml format",
-			fileType: "md-yaml",
+			fileType: FileTypeMdYaml,
 			wantContains: []string{
 				"---",
 				"title:      Test Note",
@@ -129,7 +129,7 @@ func TestGenerate(t *testing.T) {
 		},
 		{
 			name:     "md-toml format",
-			fileType: "md-toml",
+			fileType: FileTypeMdToml,
 			wantContains: []string{
 				"+++",
 				"title      = Test Note",
@@ -140,7 +140,7 @@ func TestGenerate(t *testing.T) {
 		},
 		{
 			name:     "txt format",
-			fileType: "txt",
+			fileType: FileTypeTxt,
 			wantContains: []string{
 				"title:      Test Note",
 				"tags:       tag1 tag2",
@@ -153,64 +153,64 @@ func TestGenerate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Generate(title, "", tags, tt.fileType, identifier)
+			fm := NewFrontMatter(title, "", tags, tt.fileType, identifier)
+			got := string(fm.Bytes())
 
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
-					t.Errorf("Generate(%q, %v, %q, %q) missing %q\nGot:\n%s",
-						title, tags, tt.fileType, identifier, want, got)
+					t.Errorf("FrontMatter.Bytes() missing %q\nGot:\n%s", want, got)
 				}
 			}
 
 			for _, notWant := range tt.wantNotContains {
 				if strings.Contains(got, notWant) {
-					t.Errorf("Generate(%q, %v, %q, %q) should not contain %q\nGot:\n%s",
-						title, tags, tt.fileType, identifier, notWant, got)
+					t.Errorf("FrontMatter.Bytes() should not contain %q\nGot:\n%s", notWant, got)
 				}
 			}
 		})
 	}
 }
 
-// TestGenerateEmptyTags validates front matter generation with no tags
-func TestGenerateEmptyTags(t *testing.T) {
+// TestFrontMatterBytesEmptyTags validates front matter formatting with no tags
+func TestFrontMatterBytesEmptyTags(t *testing.T) {
 	identifier := "20240101T120000"
 	title := "Test Note"
 	tags := []string{}
 
 	tests := []struct {
 		name     string
-		fileType string
+		fileType FileType
 		wantTags string
 	}{
 		{
 			name:     "org with empty tags",
-			fileType: "org",
+			fileType: FileTypeOrg,
 			wantTags: "#+filetags:",
 		},
 		{
 			name:     "md-yaml with empty tags",
-			fileType: "md-yaml",
+			fileType: FileTypeMdYaml,
 			wantTags: "tags:",
 		},
 		{
 			name:     "md-toml with empty tags",
-			fileType: "md-toml",
+			fileType: FileTypeMdToml,
 			wantTags: "tags       =",
 		},
 		{
 			name:     "txt with empty tags",
-			fileType: "txt",
+			fileType: FileTypeTxt,
 			wantTags: "tags:",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Generate(title, "", tags, tt.fileType, identifier)
+			fm := NewFrontMatter(title, "", tags, tt.fileType, identifier)
+			got := string(fm.Bytes())
 
 			if !strings.Contains(got, tt.wantTags) {
-				t.Errorf("Generate() with empty tags should contain %q\nGot:\n%s",
+				t.Errorf("FrontMatter.Bytes() with empty tags should contain %q\nGot:\n%s",
 					tt.wantTags, got)
 			}
 		})
@@ -226,7 +226,7 @@ func TestParseFrontMatter(t *testing.T) {
 		wantTitle      string
 		wantTags       []string
 		wantIdentifier string
-		wantFileType   string
+		wantFileType   FileType
 	}{
 		{
 			name: "org format",
@@ -240,7 +240,7 @@ func TestParseFrontMatter(t *testing.T) {
 			wantTitle:      "Org Note",
 			wantTags:       []string{"work", "emacs"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "org",
+			wantFileType:   FileTypeOrg,
 		},
 		{
 			name: "org with single tag",
@@ -251,7 +251,7 @@ func TestParseFrontMatter(t *testing.T) {
 			wantTitle:      "Single Tag",
 			wantTags:       []string{"single"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "org",
+			wantFileType:   FileTypeOrg,
 		},
 		{
 			name: "org without tags",
@@ -261,7 +261,7 @@ func TestParseFrontMatter(t *testing.T) {
 			wantTitle:      "No Tags",
 			wantTags:       nil,
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "org",
+			wantFileType:   FileTypeOrg,
 		},
 		{
 			name: "markdown yaml",
@@ -277,7 +277,7 @@ identifier: 20240101T120000
 			wantTitle:      "Markdown Note",
 			wantTags:       []string{"work", "personal"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "md-yaml",
+			wantFileType:   FileTypeMdYaml,
 		},
 		{
 			name: "markdown yaml with quoted title",
@@ -290,7 +290,7 @@ identifier: 20240101T120000
 			wantTitle:      "Quoted Title",
 			wantTags:       []string{"test"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "md-yaml",
+			wantFileType:   FileTypeMdYaml,
 		},
 		{
 			name: "markdown toml",
@@ -306,7 +306,7 @@ Content`,
 			wantTitle:      "TOML Note",
 			wantTags:       []string{"rust", "go"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "md-toml",
+			wantFileType:   FileTypeMdToml,
 		},
 		{
 			name: "txt format",
@@ -321,7 +321,7 @@ Content here`,
 			wantTitle:      "Plain Text",
 			wantTags:       []string{"simple", "plain"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "txt",
+			wantFileType:   FileTypeTxt,
 		},
 		{
 			name: "txt without tags",
@@ -332,7 +332,7 @@ identifier: 20240101T120000
 			wantTitle:      "No Tags Text",
 			wantTags:       nil,
 			wantIdentifier: "20240101T120000",
-			wantFileType:   "txt",
+			wantFileType:   FileTypeTxt,
 		},
 	}
 
@@ -385,8 +385,8 @@ date: 2024-01-01
 	}
 }
 
-// TestUpdateFrontMatter validates front matter updates
-func TestUpdateFrontMatter(t *testing.T) {
+// TestApply validates front matter updates
+func TestApply(t *testing.T) {
 	tests := []struct {
 		name         string
 		original     string
@@ -407,7 +407,7 @@ This should be preserved`,
 				Title:      "New Title",
 				Tags:       []string{"new", "updated"},
 				Identifier: "20240101T120000",
-				FileType:   "org",
+				FileType:   FileTypeOrg,
 			},
 			wantContains: []string{
 				"#+title:      New Title",
@@ -431,7 +431,7 @@ Content preserved`,
 				Title:      "New Title",
 				Tags:       []string{"new"},
 				Identifier: "20240101T120000",
-				FileType:   "md-yaml",
+				FileType:   FileTypeMdYaml,
 			},
 			wantContains: []string{
 				"---",
@@ -455,7 +455,7 @@ Content here`,
 				Title:      "New Title",
 				Tags:       []string{"updated"},
 				Identifier: "20240101T120000",
-				FileType:   "md-toml",
+				FileType:   FileTypeMdToml,
 			},
 			wantContains: []string{
 				"+++",
@@ -477,7 +477,7 @@ Text content`,
 				Title:      "New Title",
 				Tags:       []string{"new"},
 				Identifier: "20240101T120000",
-				FileType:   "txt",
+				FileType:   FileTypeTxt,
 			},
 			wantContains: []string{
 				"title:      New Title",
@@ -494,7 +494,7 @@ Text content`,
 				Title:      "Added Title",
 				Tags:       []string{"added"},
 				Identifier: "20240101T120000",
-				FileType:   "org",
+				FileType:   FileTypeOrg,
 			},
 			wantContains: []string{
 				"#+title:      Added Title",
@@ -510,7 +510,7 @@ Text content`,
 				Title:      "Added Title",
 				Tags:       []string{"added"},
 				Identifier: "20240101T120000",
-				FileType:   "md-yaml",
+				FileType:   FileTypeMdYaml,
 			},
 			wantContains: []string{
 				"---",
@@ -524,27 +524,27 @@ Text content`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := UpdateFrontMatter(tt.original, tt.fm)
+			got, err := Apply(tt.original, tt.fm)
 			if err != nil {
-				t.Fatalf("UpdateFrontMatter() error = %v", err)
+				t.Fatalf("Apply() error = %v", err)
 			}
 
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
-					t.Errorf("UpdateFrontMatter() missing %q\nGot:\n%s", want, got)
+					t.Errorf("Apply() missing %q\nGot:\n%s", want, got)
 				}
 			}
 
 			// Verify original content is preserved
 			if !strings.Contains(got, tt.wantPreserve) {
-				t.Errorf("UpdateFrontMatter() didn't preserve %q\nGot:\n%s", tt.wantPreserve, got)
+				t.Errorf("Apply() didn't preserve %q\nGot:\n%s", tt.wantPreserve, got)
 			}
 		})
 	}
 }
 
-// TestUpdateFrontMatterEmptyTags validates updating with empty tags
-func TestUpdateFrontMatterEmptyTags(t *testing.T) {
+// TestApplyEmptyTags validates updating with empty tags
+func TestApplyEmptyTags(t *testing.T) {
 	original := `---
 title: Test
 tags: [old, tags]
@@ -557,27 +557,27 @@ Content`
 		Title:      "Test",
 		Tags:       []string{},
 		Identifier: "20240101T120000",
-		FileType:   "md-yaml",
+		FileType:   FileTypeMdYaml,
 	}
 
-	got, err := UpdateFrontMatter(original, fm)
+	got, err := Apply(original, fm)
 	if err != nil {
-		t.Fatalf("UpdateFrontMatter() error = %v", err)
+		t.Fatalf("Apply() error = %v", err)
 	}
 
 	// Should have empty tags field, not omit it
 	if !strings.Contains(got, "tags:") {
-		t.Errorf("UpdateFrontMatter() should include tags field even when empty")
+		t.Errorf("Apply() should include tags field even when empty")
 	}
 
 	// Content should be preserved
 	if !strings.Contains(got, "Content") {
-		t.Errorf("UpdateFrontMatter() should preserve content")
+		t.Errorf("Apply() should preserve content")
 	}
 }
 
-// TestUpdateFrontMatterUnsupportedType validates error handling
-func TestUpdateFrontMatterUnsupportedType(t *testing.T) {
+// TestApplyUnsupportedType validates error handling
+func TestApplyUnsupportedType(t *testing.T) {
 	fm := &FrontMatter{
 		Title:      "Test",
 		Tags:       []string{"test"},
@@ -585,36 +585,33 @@ func TestUpdateFrontMatterUnsupportedType(t *testing.T) {
 		FileType:   "unsupported",
 	}
 
-	_, err := UpdateFrontMatter("content", fm)
+	_, err := Apply("content", fm)
 	if err == nil {
-		t.Error("UpdateFrontMatter() should error on unsupported file type")
+		t.Error("Apply() should error on unsupported file type")
 	}
 
 	if !strings.Contains(err.Error(), "unsupported file type") {
-		t.Errorf("UpdateFrontMatter() error = %v, want 'unsupported file type'", err)
+		t.Errorf("Apply() error = %v, want 'unsupported file type'", err)
 	}
 }
 
-// TestFileExtensions validates file extension mapping
-func TestFileExtensions(t *testing.T) {
+// TestGetExtension validates file extension mapping
+func TestGetExtension(t *testing.T) {
 	tests := []struct {
-		fileType string
+		fileType FileType
 		want     string
 	}{
-		{"org", ".org"},
-		{"md-yaml", ".md"},
-		{"md-toml", ".md"},
-		{"txt", ".txt"},
+		{FileTypeOrg, ".org"},
+		{FileTypeMdYaml, ".md"},
+		{FileTypeMdToml, ".md"},
+		{FileTypeTxt, ".txt"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.fileType, func(t *testing.T) {
-			got, ok := fileExtensions[tt.fileType]
-			if !ok {
-				t.Errorf("fileExtensions[%q] not found", tt.fileType)
-			}
+		t.Run(string(tt.fileType), func(t *testing.T) {
+			got := GetExtension(tt.fileType)
 			if got != tt.want {
-				t.Errorf("fileExtensions[%q] = %q, want %q", tt.fileType, got, tt.want)
+				t.Errorf("GetExtension(%q) = %q, want %q", tt.fileType, got, tt.want)
 			}
 		})
 	}
@@ -622,18 +619,19 @@ func TestFileExtensions(t *testing.T) {
 
 // TestFrontMatterRoundTrip validates generate -> parse -> update cycle
 func TestFrontMatterRoundTrip(t *testing.T) {
-	fileTypes := []string{"org", "md-yaml", "md-toml", "txt"}
+	fileTypes := []FileType{FileTypeOrg, FileTypeMdYaml, FileTypeMdToml, FileTypeTxt}
 	title := "Test Note"
 	tags := []string{"tag1", "tag2"}
 	identifier := "20240101T120000"
 
 	for _, fileType := range fileTypes {
-		t.Run(fileType, func(t *testing.T) {
+		t.Run(string(fileType), func(t *testing.T) {
 			// Generate front matter
-			content := Generate(title, "", tags, fileType, identifier)
+			fm := NewFrontMatter(title, "", tags, fileType, identifier)
+			content := string(fm.Bytes())
 
 			// Parse it back
-			ext := fileExtensions[fileType]
+			ext := GetExtension(fileType)
 			fm, err := ParseFrontMatter(content, ext)
 			if err != nil {
 				t.Fatalf("ParseFrontMatter() error = %v", err)
@@ -659,9 +657,9 @@ func TestFrontMatterRoundTrip(t *testing.T) {
 			fm.Title = newTitle
 			fm.Tags = newTags
 
-			updated, err := UpdateFrontMatter(content, fm)
+			updated, err := Apply(content, fm)
 			if err != nil {
-				t.Fatalf("UpdateFrontMatter() error = %v", err)
+				t.Fatalf("Apply() error = %v", err)
 			}
 
 			// Parse again and verify
