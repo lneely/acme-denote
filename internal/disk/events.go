@@ -60,7 +60,6 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 
 	// After updating content, check if a rename is needed
-	// Extract the FULL extension from original path (preserves .gpg, .txt.gpg, etc.)
 	dir := filepath.Dir(path)
 	if dir == "." {
 		dir = denoteDir

@@ -112,10 +112,6 @@ By default notes are markdown files with YAML frontmatter:
 
 You may change this by changing `ftype` in main.go.
 
-## Encryption Support
-
-This program supports encrypted notes by integrating with [acme-crypt](https://github.com/lneely/acme-crypt). Set up the [plumbing rules](./PLUMBING.md) to read encrypted notes, and use `CryptPut` to write them.
-
 ## Signature Support
 
 Denote supports an optional signature component in filenames: `ID==SIGNATURE--TITLE__TAGS.ext`. Signatures are useful for sequential numbering, context markers, or priorities.

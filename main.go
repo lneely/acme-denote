@@ -117,7 +117,7 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 		return fmt.Errorf("failed to update path in metadata: %w", err)
 	}
 
-	// Check if file already exists (CryptPut or manual creation case)
+	// Check if file already exists (manual creation case)
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
@@ -147,9 +147,6 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	win.Addr("$")
 	win.Ctl("dot=addr")
 	win.Ctl("show")
-
-	// Start event watcher for CryptPut detection
-	go watchNoteWindow(win, path)
 
 	return nil
 }
@@ -576,37 +573,7 @@ func applyIndexChanges(f *client.Fsys, current, updated metadata.Results) error 
 }
 
 var identifierPattern = regexp.MustCompile(`^\d{8}T\d{6}$`)
-var denoteFilePattern = regexp.MustCompile(`^(\d{8}T\d{6})--`)
 
 func isIdentifier(s string) bool {
 	return identifierPattern.MatchString(s)
-}
-
-func watchNoteWindow(win *acme.Win, path string) {
-	defer win.CloseFiles()
-
-	for e := range win.EventChan() {
-		switch e.C2 {
-		case 'x', 'X':
-			// Update metadata path when CryptPut is used
-			if string(e.Text) == "CryptPut" {
-				// Extract identifier from path
-				filename := filepath.Base(path)
-				matches := denoteFilePattern.FindStringSubmatch(filename)
-				if len(matches) >= 2 {
-					identifier := matches[1]
-					encryptedPath := path + ".gpg"
-					p9client.With9P(func(f *client.Fsys) error {
-						return p9client.WriteFile(f, "n/"+identifier+"/path", encryptedPath)
-					})
-				}
-
-				win.WriteEvent(e)
-			} else {
-				win.WriteEvent(e)
-			}
-		default:
-			win.WriteEvent(e)
-		}
-	}
 }

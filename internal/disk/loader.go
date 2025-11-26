@@ -22,8 +22,8 @@ func ExtractMetadata(path string) (*metadata.Metadata, error) {
 
 	// Check if we should try to read file content for title
 	ext := strings.ToLower(filepath.Ext(path))
-	// Don't read encrypted files or unsupported types
-	if ext == ".gpg" || (ext != ".org" && ext != ".md" && ext != ".txt") {
+	// Don't read unsupported file types
+	if ext != ".org" && ext != ".md" && ext != ".txt" {
 		return note, nil
 	}
 
@@ -45,11 +45,6 @@ func ExtractMetadata(path string) (*metadata.Metadata, error) {
 // ExtractFrontMatter reads a file and parses its front matter.
 func ExtractFrontMatter(path string) (*metadata.FrontMatter, error) {
 	ext := strings.ToLower(filepath.Ext(path))
-
-	// Don't try to parse front matter from encrypted files
-	if ext == ".gpg" {
-		return &metadata.FrontMatter{}, nil
-	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
