@@ -4,6 +4,7 @@ import (
 	"denote/internal/disk"
 	p9client "denote/internal/p9/client"
 	p9server "denote/internal/p9/server"
+	"denote/pkg/encoding/frontmatter"
 	"denote/pkg/metadata"
 	"fmt"
 	"log"
@@ -21,7 +22,7 @@ import (
 
 const (
 	wname = "/Denote/"
-	ftype = metadata.FileTypeMdYaml
+	ftype = frontmatter.FileTypeMdYaml
 )
 
 var denoteDir = os.Getenv("HOME") + "/doc"
@@ -113,11 +114,11 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 
 	newIdentifier := metadata.GenerateIdentifier()
-	ext := metadata.GetExtension(ftype)
-	filename := metadata.BuildFilename(newIdentifier, signature, title, tags, ext)
+	fm := frontmatter.New(title, signature, tags, newIdentifier)
+	ext := frontmatter.GetExtension(ftype)
+	filename := metadata.BuildFilename(fm, ext)
 	path := filepath.Join(targetDir, filename)
-	fm := metadata.NewFrontMatter(title, signature, tags, ftype, newIdentifier)
-	content := string(fm.Bytes())
+	content := string(frontmatter.Marshal(fm, ftype))
 
 	if err := p9client.WriteFile(f, "n/"+identifier+"/path", path); err != nil {
 		return fmt.Errorf("failed to update path in metadata: %w", err)

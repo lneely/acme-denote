@@ -134,7 +134,7 @@ func registerNewNote(path string) error {
 // syncFrontMatter reads the file's front matter and writes it to 9P metadata
 func syncFrontMatter(path, identifier string) error {
 	// Extract front matter from file
-	fm, err := ExtractFrontMatter(path)
+	fm, _, err := ExtractFrontMatter(path)
 	if err != nil {
 		return err
 	}
@@ -266,7 +266,7 @@ func GetAll() error {
 // getDenoteFile reloads a text file with front matter from disk to 9P
 func getDenoteFile(f *client.Fsys, path, identifier string) error {
 	// Extract front matter from file
-	fm, err := ExtractFrontMatter(path)
+	fm, _, err := ExtractFrontMatter(path)
 	if err != nil {
 		return err
 	}

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"denote/pkg/metadata"
 	p9client "denote/internal/p9/client"
+	"denote/pkg/encoding/frontmatter"
+	"denote/pkg/util"
 	"fmt"
 	"log"
 	"os"
@@ -191,7 +192,7 @@ func windowMode(args []string) error {
 	// Update frontmatter if applicable
 	if supportsFrontmatter && len(body) > 0 {
 		// Parse existing frontmatter to preserve Identifier and FileType
-		existing, err := metadata.ParseFrontMatter(string(body), ext)
+		existing, fileType, err := frontmatter.Unmarshal(string(body), ext)
 		if err != nil {
 			return fmt.Errorf("failed to parse existing frontmatter: %w", err)
 		}
@@ -202,7 +203,7 @@ func windowMode(args []string) error {
 		existing.Signature = signature
 
 		// Apply updated frontmatter to content
-		newContent, err := metadata.Apply(string(body), existing)
+		newContent, err := util.Apply(string(body), existing, fileType)
 		if err != nil {
 			return fmt.Errorf("failed to update frontmatter: %w", err)
 		}

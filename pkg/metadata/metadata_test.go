@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"denote/pkg/encoding/frontmatter"
 	"regexp"
 	"slices"
 	"testing"
@@ -215,6 +216,7 @@ func TestBuildFilename(t *testing.T) {
 		keywords   []string
 		ext        string
 		want       string
+		ftype      frontmatter.FileType
 	}{
 		{
 			name:       "complete filename with keywords",
@@ -224,6 +226,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"tag1", "tag2"},
 			ext:        ".md",
 			want:       "20231225T120000--my-title__tag1_tag2.md",
+			ftype:      frontmatter.FileTypeMdYaml,
 		},
 		{
 			name:       "filename without keywords",
@@ -233,6 +236,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{},
 			ext:        ".md",
 			want:       "20231225T120000--my-title.md",
+			ftype:      frontmatter.FileTypeMdYaml,
 		},
 		{
 			name:       "filename with signature",
@@ -242,6 +246,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"tag1"},
 			ext:        ".md",
 			want:       "20231225T120000==hello--my-title__tag1.md",
+			ftype:      frontmatter.FileTypeMdYaml,
 		},
 		{
 			name:       "filename with signature and no keywords",
@@ -251,6 +256,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{},
 			ext:        ".md",
 			want:       "20231225T120000==test--my-title.md",
+			ftype:      frontmatter.FileTypeMdYaml,
 		},
 		{
 			name:       "filename with multi-part signature",
@@ -260,6 +266,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"work"},
 			ext:        ".md",
 			want:       "20231225T120000==a==b--my-title__work.md",
+			ftype:      frontmatter.FileTypeMdYaml,
 		},
 		{
 			name:       "filename with special chars in title",
@@ -269,6 +276,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"work"},
 			ext:        ".org",
 			want:       "20231225T120000--special-title__work.org",
+			ftype:      frontmatter.FileTypeOrg,
 		},
 		{
 			name:       "org format",
@@ -278,6 +286,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"emacs"},
 			ext:        ".org",
 			want:       "20240101T000000--org-note__emacs.org",
+			ftype:      frontmatter.FileTypeOrg,
 		},
 		{
 			name:       "txt format",
@@ -287,12 +296,14 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{},
 			ext:        ".txt",
 			want:       "20240101T000000--plain-text.txt",
+			ftype:      frontmatter.FileTypeTxt,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BuildFilename(tt.identifier, tt.signature, tt.title, tt.keywords, tt.ext)
+			fm := frontmatter.New(tt.title, tt.signature, tt.keywords, tt.identifier)
+			got := BuildFilename(fm, tt.ext)
 			if got != tt.want {
 				t.Errorf("BuildFilename() = %q, want %q", got, tt.want)
 			}
@@ -409,103 +420,6 @@ func TestParseFilename(t *testing.T) {
 	}
 }
 
-// TestExtractTitleFromContent validates title extraction from file content
-func TestExtractTitleFromContent(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		ext     string
-		want    string
-	}{
-		{
-			name: "org mode with title directive",
-			content: `#+title: My Org Note
-#+date: [2024-01-01]
-
-* First Heading`,
-			ext:  ".org",
-			want: "My Org Note",
-		},
-		{
-			name: "org mode fallback to heading",
-			content: `#+date: [2024-01-01]
-
-* Heading Title
-
-Some content`,
-			ext:  ".org",
-			want: "Heading Title",
-		},
-		{
-			name: "markdown yaml front matter",
-			content: `---
-title: Markdown Note
-date: 2024-01-01
----
-
-# First Heading`,
-			ext:  ".md",
-			want: "Markdown Note",
-		},
-		{
-			name: "markdown yaml with quotes",
-			content: `---
-title: "Quoted Title"
-date: 2024-01-01
----`,
-			ext:  ".md",
-			want: "Quoted Title",
-		},
-		{
-			name: "markdown fallback to heading",
-			content: `---
-date: 2024-01-01
----
-
-# Heading Title
-
-Content here`,
-			ext:  ".md",
-			want: "Heading Title",
-		},
-		{
-			name: "markdown heading without front matter",
-			content: `# Simple Title
-
-Content`,
-			ext:  ".md",
-			want: "Simple Title",
-		},
-		{
-			name:    "unsupported extension",
-			content: "Some content",
-			ext:     ".pdf",
-			want:    "",
-		},
-		{
-			name:    "empty content",
-			content: "",
-			ext:     ".md",
-			want:    "",
-		},
-		{
-			name:    "no title found",
-			content: "Just some text without structure",
-			ext:     ".md",
-			want:    "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ExtractTitleFromContent(tt.content, tt.ext)
-			if got != tt.want {
-				t.Errorf("ExtractTitleFromContent() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 // TestSort validates sorting functionality
 func TestSort(t *testing.T) {
 	notes := Results{
@@ -595,9 +509,9 @@ func TestSort(t *testing.T) {
 // TestResultsBytes validates serialization
 func TestResultsBytes(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  Results
-		want   string
+		name  string
+		input Results
+		want  string
 	}{
 		{
 			name: "single note with tags",

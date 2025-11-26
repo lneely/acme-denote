@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"denote/pkg/encoding/frontmatter"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -123,7 +124,6 @@ func Sort(md Results, sortType SortBy, order SortOrder) {
 
 // ParseFilename extracts Denote metadata from a filename only (no file I/O).
 // Returns metadata with Path, Identifier, Signature, Title (from filename), and Tags.
-// Caller should use ExtractTitleFromContent to get title from file content.
 func ParseFilename(path string) *Metadata {
 	fname := filepath.Base(path)
 	note := &Metadata{Path: path}
@@ -147,39 +147,6 @@ func ParseFilename(path string) *Metadata {
 	}
 
 	return note
-}
-
-// ExtractTitleFromContent extracts the title from file content.
-// ext should be the file extension (e.g., ".md", ".org", ".txt").
-// Returns empty string if no title found or unsupported extension.
-func ExtractTitleFromContent(content string, ext string) string {
-	ext = strings.ToLower(ext)
-	if ext != ".org" && ext != ".md" && ext != ".txt" {
-		return ""
-	}
-
-	// Try org-mode #+title: first, then fall back to first heading
-	if ext == ".org" {
-		if m := regexp.MustCompile(`(?m)^#\+title:\s*(.+)$`).FindStringSubmatch(content); m != nil {
-			return strings.TrimSpace(m[1])
-		}
-		// Fallback to first heading (lines starting with *)
-		if m := regexp.MustCompile(`(?m)^\*+\s+(.+)$`).FindStringSubmatch(content); m != nil {
-			return strings.TrimSpace(m[1])
-		}
-	}
-
-	// Try markdown YAML front matter title: first, then fall back to # header
-	if ext == ".md" {
-		if m := regexp.MustCompile(`(?ms)^---\n.*?^title:\s*(.+?)$.*?^---`).FindStringSubmatch(content); m != nil {
-			return strings.TrimSpace(strings.Trim(m[1], `"`))
-		}
-		if m := regexp.MustCompile(`(?m)^#\s+(.+)$`).FindStringSubmatch(content); m != nil {
-			return strings.TrimSpace(m[1])
-		}
-	}
-
-	return ""
 }
 
 // GenerateIdentifier creates a new identifier timestamp.
@@ -229,10 +196,9 @@ func formatSignature(sig string) string {
 }
 
 // BuildFilename constructs a denote filename from metadata components.
-func BuildFilename(identifier, signature, title string, keywords []string, ext string) string {
-	titleSlug := slugifyTitle(title)
-	signaturePart := formatSignature(signature)
-	keywordsPart := formatKeywords(keywords)
-	return fmt.Sprintf("%s%s--%s%s%s", identifier, signaturePart, titleSlug, keywordsPart, ext)
+func BuildFilename(fm *frontmatter.FrontMatter, ext string) string {
+	titleSlug := slugifyTitle(fm.Title)
+	signaturePart := formatSignature(fm.Signature)
+	keywordsPart := formatKeywords(fm.Tags)
+	return fmt.Sprintf("%s%s--%s%s%s", fm.Identifier, signaturePart, titleSlug, keywordsPart, ext)
 }
-

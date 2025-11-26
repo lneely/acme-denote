@@ -1,8 +1,9 @@
 package disk
 
 import (
-	"denote/pkg/metadata"
 	p9client "denote/internal/p9/client"
+	"denote/pkg/encoding/frontmatter"
+	"denote/pkg/metadata"
 	"fmt"
 	"log"
 	"os"
@@ -33,50 +34,39 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 		}
 	}
 
-	// Only update frontmatter if file exists (skip if not yet created via Put)
-	if _, err := os.Stat(path); err == nil && SupportsFrontMatter(path) {
-		ext := strings.ToLower(filepath.Ext(path))
-		var fileType metadata.FileType
-		switch ext {
-		case ".org":
-			fileType = metadata.FileTypeOrg
-		case ".md":
-			fileType = metadata.FileTypeMdYaml
-		case ".txt":
-			fileType = metadata.FileTypeTxt
-		}
-
-		fm := &metadata.FrontMatter{
-			Title:      title,
-			Tags:       tags,
-			Identifier: identifier,
-			Signature:  signature,
-			FileType:   fileType,
-		}
-
-		if err := UpdateFrontMatter(path, fm); err != nil {
-			log.Printf("failed to update front matter for %s: %v", identifier, err)
-		}
+	// Only update if file exists (skip if not yet created via Put)
+	if _, err := os.Stat(path); err != nil {
+		return nil
 	}
 
-	// After updating content, check if a rename is needed
+	// Only process files with frontmatter
+	if !SupportsFrontMatter(path) {
+		return nil
+	}
+
+	// Parse existing frontmatter to get FileType and current metadata
+	existing, fileType, err := ExtractFrontMatter(path)
+	if err != nil {
+		log.Printf("failed to extract frontmatter for %s: %v", identifier, err)
+		return nil
+	}
+
+	// Update fields from 9P metadata
+	existing.Title = title
+	existing.Tags = tags
+	existing.Signature = signature
+
+	// Build new filename using updated metadata
 	dir := filepath.Dir(path)
 	if dir == "." {
 		dir = denoteDir
 	}
 
-	// Get original filename and extract extension by removing the denote components
-	originalFilename := filepath.Base(path)
-	// Find where the extension starts (after tags or after title)
-	extStart := strings.Index(originalFilename, ".")
-	if extStart == -1 {
-		extStart = len(originalFilename)
-	}
-	fullExt := originalFilename[extStart:]
-
-	filename := metadata.BuildFilename(identifier, signature, title, tags, fullExt)
+	ext := frontmatter.GetExtension(fileType)
+	filename := metadata.BuildFilename(existing, ext)
 	newPath := filepath.Join(dir, filename)
 
+	// If filename changed, update path in 9P (which might trigger rename)
 	if newPath != path {
 		newPath = filepath.Clean(newPath)
 		absNew, err := filepath.Abs(newPath)
@@ -94,6 +84,11 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 		if err := p9client.WriteFile(f, "n/"+identifier+"/path", newPath); err != nil {
 			return fmt.Errorf("failed to update path in 9p: %w", err)
 		}
+	}
+
+	// Apply updated frontmatter to file content
+	if err := UpdateFrontMatter(path, existing, fileType); err != nil {
+		log.Printf("failed to update front matter for %s: %v", identifier, err)
 	}
 
 	return nil
