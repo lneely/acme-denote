@@ -116,6 +116,28 @@ You may change this by changing `ftype` in main.go.
 
 This program supports encrypted notes by integrating with [acme-crypt](https://github.com/lneely/acme-crypt). Set up the [plumbing rules](./PLUMBING.md) to read encrypted notes, and use `CryptPut` to write them.
 
+## Signature Support
+
+Denote supports an optional signature component in filenames: `ID==SIGNATURE--TITLE__TAGS.ext`. Signatures are useful for sequential numbering, context markers, or priorities.
+
+**Plumbing Configuration:**
+
+To plumb files with signatures, you must add `=` to the file pattern character classes in your plumbing rules. Update these three patterns:
+
+**Original patterns:**
+```
+data matches '([.a-zA-Z�-\uffff0-9_/\-@]*[a-zA-Z�-\uffff0-9_/\-])':$twocolonaddr,$twocolonaddr
+data matches '([.a-zA-Z�-\uffff0-9_/\-@]*[a-zA-Z�-\uffff0-9_/\-])':$twocolonaddr
+data matches '([.a-zA-Z�-\uffff0-9_/\-@]*[a-zA-Z�-\uffff0-9_/\-])('$addr')?'
+```
+
+**Modified patterns (add `=` to character classes):**
+```
+data matches '([.a-zA-Z�-\uffff0-9_/\-@=]*[a-zA-Z�-\uffff0-9_/\-=])':$twocolonaddr,$twocolonaddr
+data matches '([.a-zA-Z�-\uffff0-9_/\-@=]*[a-zA-Z�-\uffff0-9_/\-=])':$twocolonaddr
+data matches '([.a-zA-Z�-\uffff0-9_/\-@=]*[a-zA-Z�-\uffff0-9_/\-=])('$addr')?'
+```
+
 ## Extensions
 
 Some extensions have also been ported. While these extensions, like the main program, try to stay as true as possible to the original program and be as feature-complete as possible, they are intentionally *not* exact replicas.

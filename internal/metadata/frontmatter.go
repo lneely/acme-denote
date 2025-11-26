@@ -88,16 +88,16 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 	switch ext {
 	case ".org":
 		fm.FileType = "org"
-		if m := regexp.MustCompile(`(?m)^#\+title:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^#\+title:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Title = strings.TrimSpace(m[1])
 		}
-		if m := regexp.MustCompile(`(?m)^#\+filetags:\s*:(.+):$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^#\+filetags:[ \t]*:(.+):$`).FindStringSubmatch(text); m != nil {
 			fm.Tags = strings.Split(m[1], ":")
 		}
-		if m := regexp.MustCompile(`(?m)^#\+identifier:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^#\+identifier:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Identifier = strings.TrimSpace(m[1])
 		}
-		if m := regexp.MustCompile(`(?m)^#\+signature:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^#\+signature:[ \t]*(.*)$`).FindStringSubmatch(text); m != nil {
 			fm.Signature = strings.TrimSpace(m[1])
 		}
 
@@ -107,20 +107,20 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 		if m := yamlRe.FindStringSubmatch(text); m != nil {
 			fm.FileType = "md-yaml"
 			yamlContent := m[1]
-			if m := regexp.MustCompile(`(?m)^title:\s*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
+			if m := regexp.MustCompile(`(?m)^title:[ \t]*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
 				fm.Title = strings.TrimSpace(m[1])
 			}
-			if m := regexp.MustCompile(`(?m)^tags:\s*\[(.+?)\]$`).FindStringSubmatch(yamlContent); m != nil {
+			if m := regexp.MustCompile(`(?m)^tags:[ \t]*\[(.+?)\]$`).FindStringSubmatch(yamlContent); m != nil {
 				tags := strings.Split(m[1], ",")
 				for i, t := range tags {
 					tags[i] = strings.TrimSpace(t)
 				}
 				fm.Tags = tags
 			}
-			if m := regexp.MustCompile(`(?m)^identifier:\s*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
+			if m := regexp.MustCompile(`(?m)^identifier:[ \t]*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
 				fm.Identifier = strings.TrimSpace(m[1])
 			}
-			if m := regexp.MustCompile(`(?m)^signature:\s*["']?(.+?)["']?$`).FindStringSubmatch(yamlContent); m != nil {
+			if m := regexp.MustCompile(`(?m)^signature:[ \t]*["']?(.*)["']?$`).FindStringSubmatch(yamlContent); m != nil {
 				fm.Signature = strings.TrimSpace(m[1])
 			}
 		} else {
@@ -129,20 +129,20 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 			if m := tomlRe.FindStringSubmatch(text); m != nil {
 				fm.FileType = "md-toml"
 				tomlContent := m[1]
-				if m := regexp.MustCompile(`(?m)^title\s*=\s*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
+				if m := regexp.MustCompile(`(?m)^title[ \t]*=[ \t]*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
 					fm.Title = strings.TrimSpace(m[1])
 				}
-				if m := regexp.MustCompile(`(?m)^tags\s*=\s*\[(.+?)\]$`).FindStringSubmatch(tomlContent); m != nil {
+				if m := regexp.MustCompile(`(?m)^tags[ \t]*=[ \t]*\[(.+?)\]$`).FindStringSubmatch(tomlContent); m != nil {
 					tags := strings.Split(m[1], ",")
 					for i, t := range tags {
 						tags[i] = strings.TrimSpace(t)
 					}
 					fm.Tags = tags
 				}
-				if m := regexp.MustCompile(`(?m)^identifier\s*=\s*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
+				if m := regexp.MustCompile(`(?m)^identifier[ \t]*=[ \t]*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
 					fm.Identifier = strings.TrimSpace(m[1])
 				}
-				if m := regexp.MustCompile(`(?m)^signature\s*=\s*["']?(.+?)["']?$`).FindStringSubmatch(tomlContent); m != nil {
+				if m := regexp.MustCompile(`(?m)^signature[ \t]*=[ \t]*["']?(.*)["']?$`).FindStringSubmatch(tomlContent); m != nil {
 					fm.Signature = strings.TrimSpace(m[1])
 				}
 			}
@@ -150,16 +150,16 @@ func ParseFrontMatter(content string, ext string) (*FrontMatter, error) {
 
 	case ".txt":
 		fm.FileType = "txt"
-		if m := regexp.MustCompile(`(?m)^title:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^title:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Title = strings.TrimSpace(m[1])
 		}
-		if m := regexp.MustCompile(`(?m)^tags:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^tags:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Tags = strings.Fields(m[1])
 		}
-		if m := regexp.MustCompile(`(?m)^identifier:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^identifier:[ \t]*(.+)$`).FindStringSubmatch(text); m != nil {
 			fm.Identifier = strings.TrimSpace(m[1])
 		}
-		if m := regexp.MustCompile(`(?m)^signature:\s*(.+)$`).FindStringSubmatch(text); m != nil {
+		if m := regexp.MustCompile(`(?m)^signature:[ \t]*(.*)$`).FindStringSubmatch(text); m != nil {
 			fm.Signature = strings.TrimSpace(m[1])
 		}
 	}
@@ -206,8 +206,8 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 		}
 
 	case "md-yaml":
-		// Replace YAML front matter
-		re := regexp.MustCompile(`(?s)^---\n.*?\n---\n`)
+		// Replace YAML front matter (match trailing blank lines to avoid duplication)
+		re := regexp.MustCompile(`(?s)^---\n.*?\n---\n\n*`)
 		if re.MatchString(text) {
 			newText = re.ReplaceAllString(text, newFrontMatter)
 		} else {
@@ -215,8 +215,8 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 		}
 
 	case "md-toml":
-		// Replace TOML front matter
-		re := regexp.MustCompile(`(?s)^\+\+\+\n.*?\n\+\+\+\n`)
+		// Replace TOML front matter (match trailing blank lines to avoid duplication)
+		re := regexp.MustCompile(`(?s)^\+\+\+\n.*?\n\+\+\+\n\n*`)
 		if re.MatchString(text) {
 			newText = re.ReplaceAllString(text, newFrontMatter)
 		} else {
@@ -224,8 +224,8 @@ func UpdateFrontMatter(originalContent string, fm *FrontMatter) (string, error) 
 		}
 
 	case "txt":
-		// Replace text front matter
-		re := regexp.MustCompile(`(?s)^title:.*?\n-+\n`)
+		// Replace text front matter (match trailing blank lines to avoid duplication)
+		re := regexp.MustCompile(`(?s)^title:.*?\n-+\n\n*`)
 		if re.MatchString(text) {
 			newText = re.ReplaceAllString(text, newFrontMatter)
 		} else {

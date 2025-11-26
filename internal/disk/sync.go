@@ -222,7 +222,7 @@ func SyncAll() error {
 				// Path in metadata doesn't exist - search for actual file on disk
 				// Use the directory from the metadata path (handles subdirs like journal/)
 				dir := filepath.Dir(path)
-				pattern := filepath.Join(dir, identifier+"--*")
+				pattern := filepath.Join(dir, identifier+"*")
 				matches, err := filepath.Glob(pattern)
 				if err != nil {
 					log.Printf("sync: failed to glob for %s: %v", identifier, err)

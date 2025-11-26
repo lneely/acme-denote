@@ -113,8 +113,8 @@ func HandleRenameEvent(f *client.Fsys, identifier, denoteDir string) error {
 		return nil
 	}
 
-	// Find old file on disk.
-	pattern := filepath.Join(denoteDir, identifier+"--*")
+	// Find old file on disk (matches with or without signature).
+	pattern := filepath.Join(denoteDir, identifier+"*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to find file: %w", err)
@@ -165,7 +165,7 @@ func HandleDeleteEvent(f *client.Fsys, identifier, denoteDir string) error {
 		dir = denoteDir
 	}
 
-	pattern := filepath.Join(dir, identifier+"--*")
+	pattern := filepath.Join(dir, identifier+"*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to find file: %w", err)
