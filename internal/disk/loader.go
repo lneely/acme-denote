@@ -46,8 +46,10 @@ func GetContentExtension(path string) string {
 }
 
 // SupportsFrontMatter returns true if the file extension supports frontmatter.
+// Uses the actual extension, not the content extension, so encrypted files (.md.gpg)
+// are correctly treated as binary files.
 func SupportsFrontMatter(path string) bool {
-	ext := strings.ToLower(GetContentExtension(path))
+	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".org" || ext == ".md" || ext == ".txt"
 }
 
