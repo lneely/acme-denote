@@ -23,7 +23,7 @@ func main() {
 	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "--id=") {
 		identifier := strings.TrimPrefix(os.Args[1], "--id=")
 		if err := serviceMode(identifier); err != nil {
-			fmt.Fprintf(os.Stderr, "drename: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Drn: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -31,7 +31,7 @@ func main() {
 
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "usage: Drename [identifier] 'title' [==signature] [tags]\n")
+		fmt.Fprintf(os.Stderr, "usage: Drn [identifier] 'title' [==signature] [tags]\n")
 		os.Exit(1)
 	}
 
@@ -40,7 +40,7 @@ func main() {
 	if identifierPattern.MatchString(args[0]) {
 		// Interactive mode: operate on file
 		if err := interactiveMode(args[0], args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "drename: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Drn: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -48,7 +48,7 @@ func main() {
 
 	// Window mode: operate on current window
 	if err := windowMode(args); err != nil {
-		fmt.Fprintf(os.Stderr, "drename: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Drn: %v\n", err)
 		os.Exit(1)
 	}
 }

@@ -110,9 +110,9 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 }
 
 // HandleRenameEvent handles 'r' events from the 9P server.
-// Delegates to Drename binary to perform the actual rename.
+// Delegates to Drn binary to perform the actual rename.
 func HandleRenameEvent(f *client.Fsys, identifier, denoteDir string) error {
-	cmd := exec.Command("Drename", "--id="+identifier)
+	cmd := exec.Command("Drn", "--id="+identifier)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("rename failed: %w", err)

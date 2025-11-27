@@ -111,20 +111,41 @@ Middle-click `Put` to write all metadata changes. This will rename files and, wh
 
 Reload all notes from disk, discarding any uncommitted changes in the 9P metadata. Middle-click `Get` to do this. This is useful when notes are modified outside of Acme or when you want to discard metadata changes.
 
-### Drename
+### Drn
 
-Update note metadata (title, tags, signature) from any note window:
+Update note metadata (title, tags, signature). Drn has two modes of operation:
+
+**Window Mode** - Rename from an active note window:
+
+From any note window (encrypted, binary, or text), highlight and execute:
 
 ```
-Drename 'new title' tag1,tag2 ==newsig
+Drn 'new title' tag1,tag2
+Drn ==newsig 'new title' tag1,tag2
 ```
 
-This command works for all files in the denote directory:
-- **Regular notes** (.md, .org, .txt): Updates frontmatter in window + renames file
+- Works on the window's buffer content
+- Useful for encrypted files where frontmatter can't be parsed without decryption
+- **Regular notes** (.md, .org, .txt): Updates frontmatter in buffer
+- **Binary files** (PDFs, images): No buffer changes (just updates metadata)
+- **Encrypted files** (.gpg): Updates frontmatter in buffer
+- The window must be `Put` after Drn to persist changes to disk
+
+**Interactive Mode** - Rename by identifier:
+
+From the `/Denote/` window or anywhere in Acme, highlight and execute:
+
+```
+Drn 20251112T221141 'new title' tag1,tag2
+Drn 20251112T221141 ==newsig 'new title' tag1,tag2
+```
+
+- Operates directly on the file
+- Works for all file types (text, binary, encrypted)
+- **Regular notes** (.md, .org, .txt): Updates frontmatter in file + renames file
 - **Binary files** (PDFs, images): Just renames file
-- **Encrypted files** (.gpg): Updates frontmatter in window + renames file
-
-The window must be `Put` after Drename to persist changes to disk.
+- **Encrypted files** (.gpg): Updates frontmatter in file + renames file
+- Changes are applied immediately to disk
 
 ## File Format
 
