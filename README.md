@@ -4,6 +4,10 @@
 
 The goal of this program is to provide an implementation of prot's [denote](https://github.com/protesilaos/denote) for Acme.
 
+## Use at Own Risk
+
+While I use this program daily and do my best to fix bugs quickly, it is relatively new and I don't promise that it's bug-free. If you use this program, use good sense and keep regular backups of your denote directory.
+
 ## Quick Start
 
 This README assumes you already have [plan9port](https://github.com/9fans/plan9port) installed.
