@@ -117,7 +117,7 @@ Update note metadata (title, tags, signature). Drn has two modes of operation:
 
 **Window Mode** - Rename from an active note window:
 
-From any note window (encrypted, binary, or text), highlight and execute:
+From any open note window, highlight and execute:
 
 ```
 Drn 'new title' tag1,tag2
@@ -125,10 +125,7 @@ Drn ==newsig 'new title' tag1,tag2
 ```
 
 - Works on the window's buffer content
-- Useful for encrypted files where frontmatter can't be parsed without decryption
 - **Regular notes** (.md, .org, .txt): Updates frontmatter in buffer
-- **Binary files** (PDFs, images): No buffer changes (just updates metadata)
-- **Encrypted files** (.gpg): Updates frontmatter in buffer
 - The window must be `Put` after Drn to persist changes to disk
 
 **Interactive Mode** - Rename by identifier:
@@ -141,10 +138,8 @@ Drn 20251112T221141 ==newsig 'new title' tag1,tag2
 ```
 
 - Operates directly on the file
-- Works for all file types (text, binary, encrypted)
 - **Regular notes** (.md, .org, .txt): Updates frontmatter in file + renames file
 - **Binary files** (PDFs, images): Just renames file
-- **Encrypted files** (.gpg): Updates frontmatter in file + renames file
 - Changes are applied immediately to disk
 
 ## File Format
