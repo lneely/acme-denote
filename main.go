@@ -5,6 +5,7 @@ import (
 	p9client "denote/internal/p9/client"
 	p9server "denote/internal/p9/server"
 	"denote/pkg/encoding/frontmatter"
+	"denote/pkg/encoding/results"
 	"denote/pkg/metadata"
 	"fmt"
 	"log"
@@ -36,14 +37,13 @@ func readIndex(f *client.Fsys) (metadata.Results, error) {
 		return nil, fmt.Errorf("failed to read index: %w", err)
 	}
 
-	var results metadata.Results
-	results, err = results.FromString(indexContent)
+	rs, err := results.Unmarshal([]byte(indexContent))
 	if err != nil {
 		return nil, err
 	}
 
 	// Populate Path for each note
-	for _, note := range results {
+	for _, note := range rs {
 		path, err := p9client.ReadFile(f, "n/"+note.Identifier+"/path")
 		if err != nil {
 			return nil, fmt.Errorf("failed to read path for %s: %w", note.Identifier, err)
@@ -51,7 +51,7 @@ func readIndex(f *client.Fsys) (metadata.Results, error) {
 		note.Path = path
 	}
 
-	return results, nil
+	return rs, nil
 }
 
 // setFilter sets or clears the filter on the 9P server.
@@ -180,18 +180,17 @@ func main() {
 				}
 
 				// Parse index
-				var results metadata.Results
-				results, err = results.FromString(indexContent)
+				rs, err := results.Unmarshal([]byte(indexContent))
 				if err != nil {
 					return err
 				}
 
-				if len(results) == 0 {
+				if len(rs) == 0 {
 					return fmt.Errorf("no note found with identifier %s", identifier)
 				}
 
 				// Read path for first result
-				notePath, err = p9client.ReadFile(f, "n/"+results[0].Identifier+"/path")
+				notePath, err = p9client.ReadFile(f, "n/"+rs[0].Identifier+"/path")
 				return err
 			})
 			if err != nil {
@@ -357,8 +356,7 @@ func main() {
 				}
 
 				// Parse the window content
-				var emptyResults metadata.Results
-				updated, err := emptyResults.FromString(string(body))
+				updated, err := results.Unmarshal(body)
 				if err != nil {
 					log.Printf("failed to parse window: %v", err)
 					break
@@ -463,7 +461,7 @@ func performSearch(w *acme.Win, searchText string) {
 
 func refreshWindow(w *acme.Win, rs metadata.Results) {
 	w.Addr(",")
-	w.Write("data", rs.Bytes())
+	w.Write("data", results.Marshal(rs))
 	w.Ctl("show")
 }
 

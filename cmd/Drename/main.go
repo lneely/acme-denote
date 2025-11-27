@@ -192,7 +192,7 @@ func windowMode(args []string) error {
 	// Update frontmatter if applicable
 	if supportsFrontmatter && len(body) > 0 {
 		// Parse existing frontmatter to preserve Identifier and FileType
-		existing, fileType, err := frontmatter.Unmarshal(string(body), ext)
+		existing, fileType, err := frontmatter.Unmarshal(body, ext)
 		if err != nil {
 			return fmt.Errorf("failed to parse existing frontmatter: %w", err)
 		}

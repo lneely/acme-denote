@@ -32,6 +32,7 @@ package fs
 
 import (
 	"denote/internal/disk"
+	"denote/pkg/encoding/results"
 	"denote/pkg/metadata"
 	"fmt"
 	"io"
@@ -820,7 +821,7 @@ func (s *server) pathToNoteIndex(path string) int {
 func (s *server) getIndexContent() string {
 	if s.filterQuery == "" {
 		// No filter: return all notes
-		return string(s.notes.Bytes())
+		return string(results.Marshal(s.notes))
 	}
 
 	// Return filtered notes
@@ -828,7 +829,7 @@ func (s *server) getIndexContent() string {
 	for _, note := range s.filteredNotes {
 		filtered = append(filtered, note)
 	}
-	return string(filtered.Bytes())
+	return string(results.Marshal(filtered))
 }
 
 func (s *server) getBacklinks(targetID string) string {
@@ -837,8 +838,8 @@ func (s *server) getBacklinks(targetID string) string {
 	denoteDir := s.denoteDir
 	s.mu.RUnlock()
 
-	results := disk.FindBacklinks(targetID, denoteDir, notes)
-	return string(results.Bytes())
+	res := disk.FindBacklinks(targetID, denoteDir, notes)
+	return string(results.Marshal(res))
 }
 
 func (s *server) getFileContent(path string) string {

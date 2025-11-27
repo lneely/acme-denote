@@ -78,9 +78,9 @@ func Marshal(fm *metadata.FrontMatter, fileType metadata.FileType) []byte {
 // Unmarshal extracts front matter from file content.
 // ext should be the file extension (e.g., ".md", ".org", ".txt").
 // Returns the parsed frontmatter and the detected FileType.
-func Unmarshal(content string, ext string) (*metadata.FrontMatter, metadata.FileType, error) {
+func Unmarshal(content []byte, ext string) (*metadata.FrontMatter, metadata.FileType, error) {
 	ext = strings.ToLower(ext)
-	text := content
+	text := string(content)
 
 	fm := &metadata.FrontMatter{}
 	var fileType metadata.FileType

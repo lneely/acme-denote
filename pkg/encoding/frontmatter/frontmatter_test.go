@@ -339,7 +339,7 @@ identifier: 20240101T120000
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, fileType, err := Unmarshal(tt.content, tt.ext)
+			got, fileType, err := Unmarshal([]byte(tt.content), tt.ext)
 			if err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)
 			}
@@ -369,7 +369,7 @@ func TestUnmarshalMissingFields(t *testing.T) {
 date: 2024-01-01
 ---`
 
-	got, _, err := Unmarshal(content, ".md")
+	got, _, err := Unmarshal([]byte(content), ".md")
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}

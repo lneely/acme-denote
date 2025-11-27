@@ -88,7 +88,7 @@ func ExtractFrontMatter(path string) (*metadata.FrontMatter, metadata.FileType, 
 		return nil, "", fmt.Errorf("failed to read file: %w", err)
 	}
 
-	return frontmatter.Unmarshal(string(content), ext)
+	return frontmatter.Unmarshal(content, ext)
 }
 
 // UpdateFrontMatter updates the front matter in a file.
