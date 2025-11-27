@@ -66,6 +66,7 @@ const (
 	qidNew      = 999997
 	qidNDir     = 999996
 	qidCtl      = 999995
+	qidDir      = 999994
 )
 
 var fileNames = []string{"path", "title", "keywords", "signature", "ctl", "backlinks"}
@@ -298,6 +299,14 @@ func (s *server) walk(cs *connState, fc *plan9.Fcall) *plan9.Fcall {
 				}
 				qids = append(qids, qid)
 				path = "/ctl"
+				found = true
+			} else if name == "dir" {
+				qid := plan9.Qid{
+					Type: QTFile,
+					Path: uint64(qidDir),
+				}
+				qids = append(qids, qid)
+				path = "/dir"
 				found = true
 			} else if name == "n" {
 				qid := plan9.Qid{
@@ -695,6 +704,19 @@ func (s *server) readDir(path string, offset int64, count uint32) []byte {
 			Muid:   "denote",
 			Length: 0,
 		})
+		// add dir node
+		dirs = append(dirs, plan9.Dir{
+			Qid: plan9.Qid{
+				Type: QTFile,
+				Path: uint64(qidDir),
+			},
+			Mode:   0444,
+			Name:   "dir",
+			Uid:    "denote",
+			Gid:    "denote",
+			Muid:   "denote",
+			Length: uint64(len(s.denoteDir)),
+		})
 		// add n directory
 		dirs = append(dirs, plan9.Dir{
 			Qid: plan9.Qid{
@@ -845,6 +867,10 @@ func (s *server) getBacklinks(targetID string) string {
 func (s *server) getFileContent(path string) string {
 	if path == "/index" {
 		return s.getIndexContent()
+	}
+
+	if path == "/dir" {
+		return s.denoteDir
 	}
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
