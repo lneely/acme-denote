@@ -8,6 +8,10 @@ The goal of this program is to provide an implementation of prot's [denote](http
 
 While I use this program daily and do my best to fix bugs quickly, it is relatively new and I don't promise that it's bug-free. If you use this program, use good sense and keep regular backups of your denote directory.
 
+## Does it work on Plan 9?
+
+Short answer: Maybe? I don't know. I use [plan9port](https://github.com/9fans/plan9port). If there are any regular Plan 9 users out there, I would be interested to know if it does, though. :)
+
 ## Quick Start
 
 This README assumes you already have [plan9port](https://github.com/9fans/plan9port) installed.
