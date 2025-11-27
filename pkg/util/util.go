@@ -2,6 +2,7 @@ package util
 
 import (
 	"denote/pkg/encoding/frontmatter"
+	"denote/pkg/metadata"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,13 +10,13 @@ import (
 
 // Apply applies front matter to file content, replacing existing front matter if present.
 // originalContent is the current file content, fm is the new front matter to apply.
-func Apply(originalContent string, fm *frontmatter.FrontMatter, fileType frontmatter.FileType) (string, error) {
+func Apply(originalContent string, fm *metadata.FrontMatter, fileType metadata.FileType) (string, error) {
 	text := originalContent
 	newFrontMatter := string(frontmatter.Marshal(fm, fileType))
 
 	var newText string
 	switch fileType {
-	case frontmatter.FileTypeOrg:
+	case metadata.FileTypeOrg:
 		// Find end of front matter (first blank line or non-#+ line)
 		lines := strings.Split(text, "\n")
 		endIdx := 0
@@ -35,7 +36,7 @@ func Apply(originalContent string, fm *frontmatter.FrontMatter, fileType frontma
 			newText = newFrontMatter + text
 		}
 
-	case frontmatter.FileTypeMdYaml:
+	case metadata.FileTypeMdYaml:
 		// Replace YAML front matter (match trailing blank lines to avoid duplication)
 		re := regexp.MustCompile(`(?s)^---\n.*?\n---\n\n*`)
 		if re.MatchString(text) {
@@ -44,7 +45,7 @@ func Apply(originalContent string, fm *frontmatter.FrontMatter, fileType frontma
 			newText = newFrontMatter + text
 		}
 
-	case frontmatter.FileTypeMdToml:
+	case metadata.FileTypeMdToml:
 		// Replace TOML front matter (match trailing blank lines to avoid duplication)
 		re := regexp.MustCompile(`(?s)^\+\+\+\n.*?\n\+\+\+\n\n*`)
 		if re.MatchString(text) {
@@ -53,7 +54,7 @@ func Apply(originalContent string, fm *frontmatter.FrontMatter, fileType frontma
 			newText = newFrontMatter + text
 		}
 
-	case frontmatter.FileTypeTxt:
+	case metadata.FileTypeTxt:
 		// Replace text front matter (match trailing blank lines to avoid duplication)
 		re := regexp.MustCompile(`(?s)^title:.*?\n-+\n\n*`)
 		if re.MatchString(text) {

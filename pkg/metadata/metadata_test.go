@@ -1,7 +1,6 @@
 package metadata
 
 import (
-	"denote/pkg/encoding/frontmatter"
 	"regexp"
 	"slices"
 	"testing"
@@ -216,7 +215,7 @@ func TestBuildFilename(t *testing.T) {
 		keywords   []string
 		ext        string
 		want       string
-		ftype      frontmatter.FileType
+		ftype      FileType
 	}{
 		{
 			name:       "complete filename with keywords",
@@ -226,7 +225,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"tag1", "tag2"},
 			ext:        ".md",
 			want:       "20231225T120000--my-title__tag1_tag2.md",
-			ftype:      frontmatter.FileTypeMdYaml,
+			ftype:      FileTypeMdYaml,
 		},
 		{
 			name:       "filename without keywords",
@@ -236,7 +235,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{},
 			ext:        ".md",
 			want:       "20231225T120000--my-title.md",
-			ftype:      frontmatter.FileTypeMdYaml,
+			ftype:      FileTypeMdYaml,
 		},
 		{
 			name:       "filename with signature",
@@ -246,7 +245,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"tag1"},
 			ext:        ".md",
 			want:       "20231225T120000==hello--my-title__tag1.md",
-			ftype:      frontmatter.FileTypeMdYaml,
+			ftype:      FileTypeMdYaml,
 		},
 		{
 			name:       "filename with signature and no keywords",
@@ -256,7 +255,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{},
 			ext:        ".md",
 			want:       "20231225T120000==test--my-title.md",
-			ftype:      frontmatter.FileTypeMdYaml,
+			ftype:      FileTypeMdYaml,
 		},
 		{
 			name:       "filename with multi-part signature",
@@ -266,7 +265,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"work"},
 			ext:        ".md",
 			want:       "20231225T120000==a==b--my-title__work.md",
-			ftype:      frontmatter.FileTypeMdYaml,
+			ftype:      FileTypeMdYaml,
 		},
 		{
 			name:       "filename with special chars in title",
@@ -276,7 +275,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"work"},
 			ext:        ".org",
 			want:       "20231225T120000--special-title__work.org",
-			ftype:      frontmatter.FileTypeOrg,
+			ftype:      FileTypeOrg,
 		},
 		{
 			name:       "org format",
@@ -286,7 +285,7 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{"emacs"},
 			ext:        ".org",
 			want:       "20240101T000000--org-note__emacs.org",
-			ftype:      frontmatter.FileTypeOrg,
+			ftype:      FileTypeOrg,
 		},
 		{
 			name:       "txt format",
@@ -296,13 +295,13 @@ func TestBuildFilename(t *testing.T) {
 			keywords:   []string{},
 			ext:        ".txt",
 			want:       "20240101T000000--plain-text.txt",
-			ftype:      frontmatter.FileTypeTxt,
+			ftype:      FileTypeTxt,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fm := frontmatter.New(tt.title, tt.signature, tt.keywords, tt.identifier)
+			fm := NewFrontMatter(tt.title, tt.signature, tt.keywords, tt.identifier)
 			got := BuildFilename(fm, tt.ext)
 			if got != tt.want {
 				t.Errorf("BuildFilename() = %q, want %q", got, tt.want)

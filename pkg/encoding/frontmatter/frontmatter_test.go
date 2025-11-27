@@ -1,6 +1,7 @@
 package frontmatter
 
 import (
+	"denote/pkg/metadata"
 	"slices"
 	"strings"
 	"testing"
@@ -12,82 +13,82 @@ func TestFormatTags(t *testing.T) {
 	tests := []struct {
 		name     string
 		tags     []string
-		fileType FileType
+		fileType metadata.FileType
 		want     string
 	}{
 		{
 			name:     "org with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			want:     ":tag1:tag2:",
 		},
 		{
 			name:     "org with single tag",
 			tags:     []string{"single"},
-			fileType: FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			want:     ":single:",
 		},
 		{
 			name:     "org with empty tags",
 			tags:     []string{},
-			fileType: FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			want:     "",
 		},
 		{
 			name:     "md-yaml with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			want:     "[tag1, tag2]",
 		},
 		{
 			name:     "md-yaml with single tag",
 			tags:     []string{"single"},
-			fileType: FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			want:     "[single]",
 		},
 		{
 			name:     "md-yaml with empty tags",
 			tags:     []string{},
-			fileType: FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			want:     "",
 		},
 		{
 			name:     "md-toml with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: FileTypeMdToml,
+			fileType: metadata.FileTypeMdToml,
 			want:     "[tag1, tag2]",
 		},
 		{
 			name:     "md-toml with empty tags",
 			tags:     []string{},
-			fileType: FileTypeMdToml,
+			fileType: metadata.FileTypeMdToml,
 			want:     "",
 		},
 		{
 			name:     "txt with multiple tags",
 			tags:     []string{"tag1", "tag2"},
-			fileType: FileTypeTxt,
+			fileType: metadata.FileTypeTxt,
 			want:     "tag1 tag2",
 		},
 		{
 			name:     "txt with single tag",
 			tags:     []string{"single"},
-			fileType: FileTypeTxt,
+			fileType: metadata.FileTypeTxt,
 			want:     "single",
 		},
 		{
 			name:     "txt with empty tags",
 			tags:     []string{},
-			fileType: FileTypeTxt,
+			fileType: metadata.FileTypeTxt,
 			want:     "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatTags(tt.tags, tt.fileType)
+			got := formatTags(tt.tags, tt.fileType)
 			if got != tt.want {
-				t.Errorf("FormatTags(%v, %q) = %q, want %q", tt.tags, tt.fileType, got, tt.want)
+				t.Errorf("formatTags(%v, %q) = %q, want %q", tt.tags, tt.fileType, got, tt.want)
 			}
 		})
 	}
@@ -102,13 +103,13 @@ func TestFrontMatterBytes(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		fileType        FileType
+		fileType        metadata.FileType
 		wantContains    []string
 		wantNotContains []string
 	}{
 		{
 			name:     "org format",
-			fileType: FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			wantContains: []string{
 				"#+title:      Test Note",
 				"#+filetags:   :tag1:tag2:",
@@ -118,7 +119,7 @@ func TestFrontMatterBytes(t *testing.T) {
 		},
 		{
 			name:     "md-yaml format",
-			fileType: FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			wantContains: []string{
 				"---",
 				"title:      Test Note",
@@ -129,7 +130,7 @@ func TestFrontMatterBytes(t *testing.T) {
 		},
 		{
 			name:     "md-toml format",
-			fileType: FileTypeMdToml,
+			fileType: metadata.FileTypeMdToml,
 			wantContains: []string{
 				"+++",
 				"title      = Test Note",
@@ -140,7 +141,7 @@ func TestFrontMatterBytes(t *testing.T) {
 		},
 		{
 			name:     "txt format",
-			fileType: FileTypeTxt,
+			fileType: metadata.FileTypeTxt,
 			wantContains: []string{
 				"title:      Test Note",
 				"tags:       tag1 tag2",
@@ -153,7 +154,7 @@ func TestFrontMatterBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fm := New(title, "", tags, identifier)
+			fm := metadata.NewFrontMatter(title, "", tags, identifier)
 			got := string(Marshal(fm, tt.fileType))
 
 			for _, want := range tt.wantContains {
@@ -179,34 +180,34 @@ func TestFrontMatterBytesEmptyTags(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		fileType FileType
+		fileType metadata.FileType
 		wantTags string
 	}{
 		{
 			name:     "org with empty tags",
-			fileType: FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			wantTags: "#+filetags:",
 		},
 		{
 			name:     "md-yaml with empty tags",
-			fileType: FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			wantTags: "tags:",
 		},
 		{
 			name:     "md-toml with empty tags",
-			fileType: FileTypeMdToml,
+			fileType: metadata.FileTypeMdToml,
 			wantTags: "tags       =",
 		},
 		{
 			name:     "txt with empty tags",
-			fileType: FileTypeTxt,
+			fileType: metadata.FileTypeTxt,
 			wantTags: "tags:",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fm := New(title, "", tags, identifier)
+			fm := metadata.NewFrontMatter(title, "", tags, identifier)
 			got := string(Marshal(fm, tt.fileType))
 
 			if !strings.Contains(got, tt.wantTags) {
@@ -226,7 +227,7 @@ func TestUnmarshal(t *testing.T) {
 		wantTitle      string
 		wantTags       []string
 		wantIdentifier string
-		wantFileType   FileType
+		wantFileType   metadata.FileType
 	}{
 		{
 			name: "org format",
@@ -240,7 +241,7 @@ func TestUnmarshal(t *testing.T) {
 			wantTitle:      "Org Note",
 			wantTags:       []string{"work", "emacs"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeOrg,
+			wantFileType:   metadata.FileTypeOrg,
 		},
 		{
 			name: "org with single tag",
@@ -251,7 +252,7 @@ func TestUnmarshal(t *testing.T) {
 			wantTitle:      "Single Tag",
 			wantTags:       []string{"single"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeOrg,
+			wantFileType:   metadata.FileTypeOrg,
 		},
 		{
 			name: "org without tags",
@@ -261,7 +262,7 @@ func TestUnmarshal(t *testing.T) {
 			wantTitle:      "No Tags",
 			wantTags:       nil,
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeOrg,
+			wantFileType:   metadata.FileTypeOrg,
 		},
 		{
 			name: "markdown yaml",
@@ -277,7 +278,7 @@ identifier: 20240101T120000
 			wantTitle:      "Markdown Note",
 			wantTags:       []string{"work", "personal"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeMdYaml,
+			wantFileType:   metadata.FileTypeMdYaml,
 		},
 		{
 			name: "markdown yaml with quoted title",
@@ -290,7 +291,7 @@ identifier: 20240101T120000
 			wantTitle:      "Quoted Title",
 			wantTags:       []string{"test"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeMdYaml,
+			wantFileType:   metadata.FileTypeMdYaml,
 		},
 		{
 			name: "markdown toml",
@@ -306,7 +307,7 @@ Content`,
 			wantTitle:      "TOML Note",
 			wantTags:       []string{"rust", "go"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeMdToml,
+			wantFileType:   metadata.FileTypeMdToml,
 		},
 		{
 			name: "txt format",
@@ -321,7 +322,7 @@ Content here`,
 			wantTitle:      "Plain Text",
 			wantTags:       []string{"simple", "plain"},
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeTxt,
+			wantFileType:   metadata.FileTypeTxt,
 		},
 		{
 			name: "txt without tags",
@@ -332,7 +333,7 @@ identifier: 20240101T120000
 			wantTitle:      "No Tags Text",
 			wantTags:       nil,
 			wantIdentifier: "20240101T120000",
-			wantFileType:   FileTypeTxt,
+			wantFileType:   metadata.FileTypeTxt,
 		},
 	}
 

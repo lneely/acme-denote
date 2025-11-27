@@ -2,7 +2,6 @@ package disk
 
 import (
 	p9client "denote/internal/p9/client"
-	"denote/pkg/encoding/frontmatter"
 	"denote/pkg/metadata"
 	"fmt"
 	"log"
@@ -62,7 +61,7 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 		dir = denoteDir
 	}
 
-	ext := frontmatter.GetExtension(fileType)
+	ext := metadata.GetExtension(fileType)
 	filename := metadata.BuildFilename(existing, ext)
 	newPath := filepath.Join(dir, filename)
 

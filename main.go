@@ -22,7 +22,7 @@ import (
 
 const (
 	wname = "/Denote/"
-	ftype = frontmatter.FileTypeMdYaml
+	ftype = metadata.FileTypeMdYaml
 )
 
 var denoteDir = os.Getenv("HOME") + "/doc"
@@ -114,8 +114,8 @@ func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
 	}
 
 	newIdentifier := metadata.GenerateIdentifier()
-	fm := frontmatter.New(title, signature, tags, newIdentifier)
-	ext := frontmatter.GetExtension(ftype)
+	fm := metadata.NewFrontMatter(title, signature, tags, newIdentifier)
+	ext := metadata.GetExtension(ftype)
 	filename := metadata.BuildFilename(fm, ext)
 	path := filepath.Join(targetDir, filename)
 	content := string(frontmatter.Marshal(fm, ftype))

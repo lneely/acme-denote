@@ -1,7 +1,6 @@
 package metadata
 
 import (
-	"denote/pkg/encoding/frontmatter"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -196,7 +195,7 @@ func formatSignature(sig string) string {
 }
 
 // BuildFilename constructs a denote filename from metadata components.
-func BuildFilename(fm *frontmatter.FrontMatter, ext string) string {
+func BuildFilename(fm *FrontMatter, ext string) string {
 	titleSlug := slugifyTitle(fm.Title)
 	signaturePart := formatSignature(fm.Signature)
 	keywordsPart := formatKeywords(fm.Tags)

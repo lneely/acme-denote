@@ -80,7 +80,7 @@ func ExtractMetadata(path string) (*metadata.Metadata, error) {
 
 // ExtractFrontMatter reads a file and parses its front matter.
 // Returns the parsed FrontMatter and the detected FileType.
-func ExtractFrontMatter(path string) (*frontmatter.FrontMatter, frontmatter.FileType, error) {
+func ExtractFrontMatter(path string) (*metadata.FrontMatter, metadata.FileType, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 
 	content, err := os.ReadFile(path)
@@ -92,7 +92,7 @@ func ExtractFrontMatter(path string) (*frontmatter.FrontMatter, frontmatter.File
 }
 
 // UpdateFrontMatter updates the front matter in a file.
-func UpdateFrontMatter(path string, fm *frontmatter.FrontMatter, fileType frontmatter.FileType) error {
+func UpdateFrontMatter(path string, fm *metadata.FrontMatter, fileType metadata.FileType) error {
 	// Only update frontmatter for supported file types
 	if !SupportsFrontMatter(path) {
 		return nil

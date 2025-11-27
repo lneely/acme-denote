@@ -1,7 +1,7 @@
 package util
 
 import (
-	"denote/pkg/encoding/frontmatter"
+	"denote/pkg/metadata"
 	"strings"
 	"testing"
 )
@@ -10,8 +10,8 @@ func TestApply(t *testing.T) {
 	tests := []struct {
 		name         string
 		original     string
-		fm           *frontmatter.FrontMatter
-		fileType     frontmatter.FileType
+		fm           *metadata.FrontMatter
+		fileType     metadata.FileType
 		wantContains []string
 		wantPreserve string
 	}{
@@ -24,12 +24,12 @@ func TestApply(t *testing.T) {
 
 * Original Content
 This should be preserved`,
-			fm: &frontmatter.FrontMatter{
+			fm: &metadata.FrontMatter{
 				Title:      "New Title",
 				Tags:       []string{"new", "updated"},
 				Identifier: "20240101T120000",
 			},
-			fileType: frontmatter.FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			wantContains: []string{
 				"#+title:      New Title",
 				"#+filetags:   :new:updated:",
@@ -48,12 +48,12 @@ identifier: 20240101T120000
 
 # Original Heading
 Content preserved`,
-			fm: &frontmatter.FrontMatter{
+			fm: &metadata.FrontMatter{
 				Title:      "New Title",
 				Tags:       []string{"new"},
 				Identifier: "20240101T120000",
 			},
-			fileType: frontmatter.FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			wantContains: []string{
 				"---",
 				"title:      New Title",
@@ -72,12 +72,12 @@ identifier = 20240101T120000
 +++
 
 Content here`,
-			fm: &frontmatter.FrontMatter{
+			fm: &metadata.FrontMatter{
 				Title:      "New Title",
 				Tags:       []string{"updated"},
 				Identifier: "20240101T120000",
 			},
-			fileType: frontmatter.FileTypeMdToml,
+			fileType: metadata.FileTypeMdToml,
 			wantContains: []string{
 				"+++",
 				"title      = New Title",
@@ -94,12 +94,12 @@ identifier: 20240101T120000
 ---------------------------
 
 Text content`,
-			fm: &frontmatter.FrontMatter{
+			fm: &metadata.FrontMatter{
 				Title:      "New Title",
 				Tags:       []string{"new"},
 				Identifier: "20240101T120000",
 			},
-			fileType: frontmatter.FileTypeTxt,
+			fileType: metadata.FileTypeTxt,
 			wantContains: []string{
 				"title:      New Title",
 				"tags:       new",
@@ -111,12 +111,12 @@ Text content`,
 		{
 			name:     "add front matter when missing (org)",
 			original: `* Original Heading`,
-			fm: &frontmatter.FrontMatter{
+			fm: &metadata.FrontMatter{
 				Title:      "Added Title",
 				Tags:       []string{"added"},
 				Identifier: "20240101T120000",
 			},
-			fileType: frontmatter.FileTypeOrg,
+			fileType: metadata.FileTypeOrg,
 			wantContains: []string{
 				"#+title:      Added Title",
 				"#+filetags:   :added:",
@@ -127,12 +127,12 @@ Text content`,
 		{
 			name:     "add front matter when missing (md-yaml)",
 			original: `# Original Heading`,
-			fm: &frontmatter.FrontMatter{
+			fm: &metadata.FrontMatter{
 				Title:      "Added Title",
 				Tags:       []string{"added"},
 				Identifier: "20240101T120000",
 			},
-			fileType: frontmatter.FileTypeMdYaml,
+			fileType: metadata.FileTypeMdYaml,
 			wantContains: []string{
 				"---",
 				"title:      Added Title",
@@ -174,13 +174,13 @@ identifier: 20240101T120000
 
 Content`
 
-	fm := &frontmatter.FrontMatter{
+	fm := &metadata.FrontMatter{
 		Title:      "Test",
 		Tags:       []string{},
 		Identifier: "20240101T120000",
 	}
 
-	got, err := Apply(original, fm, frontmatter.FileTypeMdYaml)
+	got, err := Apply(original, fm, metadata.FileTypeMdYaml)
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
@@ -198,7 +198,7 @@ Content`
 
 // TestApplyUnsupportedType validates error handling
 func TestApplyUnsupportedType(t *testing.T) {
-	fm := &frontmatter.FrontMatter{
+	fm := &metadata.FrontMatter{
 		Title:      "Test",
 		Tags:       []string{"test"},
 		Identifier: "20240101T120000",
