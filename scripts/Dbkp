@@ -1,0 +1,100 @@
+#!/usr/local/plan9/bin/rc
+
+# Dbkp - Backup and restore denote directory
+# Usage: Dbkp                    (create backup)
+#        Dbkp YYYYMMddTHHmmss    (restore backup)
+
+# Configuration
+backupdir=$HOME/Dbkp
+
+
+# get denotedir
+denotedir=`{9p read denote/dir}
+if(~ $#denotedir 0 || ~ $denotedir '') {
+	echo 'error: could not read denote directory from server' >[1=2]
+	echo 'ensure denote server is running' >[1=2]
+	exit 1
+}
+denotebase=`{basename $denotedir}
+
+# create backupdir
+mkdir -p $backupdir
+
+# parse args
+if(~ $#* 0) { # backup mode
+	timestamp=`{9 date | awk 'BEGIN {
+		m["Jan"]=1; m["Feb"]=2; m["Mar"]=3; m["Apr"]=4
+		m["May"]=5; m["Jun"]=6; m["Jul"]=7; m["Aug"]=8
+		m["Sep"]=9; m["Oct"]=10; m["Nov"]=11; m["Dec"]=12
+	}{
+		split($4, t, ":")
+		printf "%s%02d%02dT%s%s%s\n", $6, m[$2], $3, t[1], t[2], t[3]
+	}'}
+
+	backupfile=$backupdir/$timestamp'-'$denotebase'-dbkp.tar.gz'
+
+	# create temporary directory and copy denote contents there
+	timestampdir=$backupdir/$timestamp
+	mkdir -p $timestampdir
+	cp -rf $denotedir/* $timestampdir
+
+	# build tarball and cleanup temp dir
+	echo 'Creating backup:' $backupfile
+	cd $backupdir
+	9 tar cvzf $backupfile $timestamp
+	rm -rf $timestampdir
+
+	if(test -f $backupfile) {
+		echo 'Backup created successfully'
+	}
+	if not {
+		echo 'error: backup failed' >[1=2]
+		exit 1
+	}
+}
+
+if not if(~ $#* 1) { # restore or list mode
+
+	# check for list mode
+	if(~ $1 l) {
+		ls $backupdir | awk -F'[-.]' '{print $1}' | awk -F'/' '{print $NF}'
+		exit 0
+	}
+
+	# validate timestamp argument
+	timestamp=$1
+	if(! echo $timestamp | 9 grep '^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]$' >/dev/null >[2=1]) {
+		echo 'error: invalid timestamp format (expected YYYYMMddTHHmmss)' >[1=2]
+		exit 1
+	}
+
+	backupfile=$backupdir/$timestamp'-'$denotebase'-dbkp.tar.gz'
+	if(! test -f $backupfile) {
+		echo 'error: backup file not found:' $backupfile >[1=2]
+		echo 'available backups:' >[1=2]
+		ls $backupdir/*-$denotebase-dbkp.tar.gz >[1=2]
+		exit 1
+	}
+
+	# extract tarball to restore directory
+	restoredir=$denotedir/restore
+	mkdir -p $restoredir
+	echo 'Restoring backup to:' $restoredir
+	cd $restoredir
+	9 tar xvzf $backupfile
+
+	if(test -d $restoredir/$timestamp) {
+		echo 'Backup restored successfully to:' $restoredir/$timestamp
+	}
+	if not {
+		echo 'error: restore failed' >[1=2]
+		exit 1
+	}
+}
+
+if not {
+	echo 'usage: Dbkp                   (create backup)' >[1=2]
+	echo '       Dbkp l                 (list backups)' >[1=2]
+	echo '       Dbkp YYYYMMddTHHmmss   (restore backup)' >[1=2]
+	exit 1
+}

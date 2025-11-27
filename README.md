@@ -6,7 +6,7 @@ The goal of this program is to provide an implementation of prot's [denote](http
 
 ## Use at Own Risk
 
-While I use this program daily and do my best to fix bugs quickly, it is relatively new and I don't promise that it's bug-free. If you use this program, use good sense and keep regular backups of your denote directory.
+While I use this program daily and do my best to fix bugs quickly, it is relatively new and I don't promise that it's bug-free. If you use this program, use good sense and keep regular backups of your denote directory. ([Dbkp](#dbkp) provided for convenience.)
 
 ## Does it work on Plan 9?
 
@@ -295,6 +295,55 @@ Examples:
 Dmerge 20251125T130000 org-quote
 Dmerge 20251125T130000 md-fence
 ```
+
+### Dbkp
+
+Backup and restore your denote directory. Backups are timestamped tar.gz archives stored in `$HOME/Dbkp/` by default.
+
+**Configuration:**
+
+Customize the backup directory by editing the variable in the `Dbkp` script:
+
+```rc
+# Configuration
+backupdir=$HOME/Dbkp
+```
+
+**Create Backup:**
+
+Create a timestamped backup of your denote directory:
+
+```
+Dbkp
+```
+
+This creates `$backupdir/YYYYMMddTHHmmss-<denote-dir-name>-dbkp.tar.gz`.
+
+**List Backups:**
+
+List all available backups:
+
+```
+Dbkp l
+```
+
+Output shows timestamps, one per line:
+
+```
+20251127T140558
+20251127T142011
+20251127T143725
+```
+
+**Restore Backup:**
+
+Restore a backup to `$denoteDir/restore/YYYYMMddTHHmmss/`:
+
+```
+Dbkp 20251127T140558
+```
+
+The backup is extracted to a timestamped subdirectory within the restore directory, making it easy to identify when the backup was created.
 
 ## Possible Future Work
 
