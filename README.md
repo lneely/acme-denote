@@ -271,3 +271,37 @@ Examples:
 Dmerge 20251125T130000 org-quote
 Dmerge 20251125T130000 md-fence
 ```
+
+## Possible Future Work
+
+### Templates
+
+Not a core feature of acme-denote, but could be implemented as an extension (e.g., `Dtmpl <path>` or `<tmpl> | Dtmpl`). Possible approach:
+
+- New Go binary, `cmd/Dtmpl/`
+- Use `text/template`
+- Read template and active window body
+- Build template variable to value mapping
+- Define common variables, e.g., `{{date}}`, `{{author}}`
+- Render template and write to the active window body (`echo <content> | 9p write acme/$winid/body`)
+
+### Content Search
+
+Currently, it is possible to simply grep inside of the denote directory to perform a content search. If this is not convenient enough, then adding `Grep` to the `/Denote/` window tag line and performing this search transparently would not be difficult.
+
+### Multiple Denote Directories
+
+I find that it is enough to have one denote directory, but support multiple directories could be a nice feature. A possible approach is to keep the built-in directory (e.g., `$HOME/doc`) as the default, and pass in `path/to/dir` as an argument when running Denote. This could look like:
+
+- Highlight a directory path in acme
+- `2-1` chord to Denote points Denote to that directory instead of the default
+
+### Support Query "Links"
+
+Support `denote-query:<query>` style "links" with plumbing (e.g., `denote-query:project`). Possible approach:
+
+- New `rc` script, e.g., `Dqry`
+  - Writes the query to `denote/filter` to mutate the index
+  - Reads the index into a search results window
+  - Writes empty query to `denote/filter` to reset the index
+- Setup a new plumbing rule `denote-query:<expr>` to run `Dqry`
