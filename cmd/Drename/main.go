@@ -29,11 +29,88 @@ func main() {
 		return
 	}
 
-	// Window mode (called by user from acme window)
-	if err := windowMode(os.Args[1:]); err != nil {
+	args := os.Args[1:]
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "usage: Drename [identifier] 'title' [==signature] [tags]\n")
+		os.Exit(1)
+	}
+
+	// Check if first argument is an identifier (interactive mode)
+	identifierPattern := regexp.MustCompile(`^\d{8}T\d{6}$`)
+	if identifierPattern.MatchString(args[0]) {
+		// Interactive mode: operate on file
+		if err := interactiveMode(args[0], args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "drename: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Window mode: operate on current window
+	if err := windowMode(args); err != nil {
 		fmt.Fprintf(os.Stderr, "drename: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// parseRenameArgs parses 'title' [==signature] [tags] or [==signature] 'title' [tags]
+func parseRenameArgs(args []string) (title, signature string, tags []string, err error) {
+	input := strings.Join(args, " ")
+
+	// Extract signature if present at the beginning
+	if strings.HasPrefix(input, "==") {
+		spaceIdx := strings.Index(input, " ")
+		if spaceIdx == -1 {
+			return "", "", nil, fmt.Errorf("title is required")
+		}
+		signature = input[2:spaceIdx] // Skip ==
+		input = strings.TrimSpace(input[spaceIdx+1:])
+	}
+
+	// Extract title (must be single-quoted)
+	if !strings.HasPrefix(input, "'") {
+		return "", "", nil, fmt.Errorf("title must be single-quoted")
+	}
+
+	closeQuote := strings.Index(input[1:], "'")
+	if closeQuote == -1 {
+		return "", "", nil, fmt.Errorf("title must be single-quoted (missing closing quote)")
+	}
+
+	title = input[1 : closeQuote+1]
+	if title == "" {
+		return "", "", nil, fmt.Errorf("title cannot be empty")
+	}
+
+	// Extract signature and tags (everything after closing quote)
+	remainder := strings.TrimSpace(input[closeQuote+2:])
+
+	if remainder != "" {
+		// Check if signature is present (starts with ==) and wasn't already parsed
+		if signature == "" && strings.HasPrefix(remainder, "==") {
+			// Find end of signature (space before tags)
+			spaceIdx := strings.Index(remainder, " ")
+			if spaceIdx == -1 {
+				// No tags, just signature
+				signature = remainder[2:] // Skip ==
+			} else {
+				signature = remainder[2:spaceIdx] // Skip ==
+				remainder = strings.TrimSpace(remainder[spaceIdx+1:])
+			}
+		}
+
+		// Extract tags if present
+		if remainder != "" && !strings.HasPrefix(remainder, "==") {
+			// Validate tags
+			tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
+			if !tagPattern.MatchString(remainder) {
+				return "", "", nil, fmt.Errorf("tags must be comma-delimited lowercase unicode words (no spaces)")
+			}
+			tags = strings.Split(remainder, ",")
+		}
+	}
+
+	return title, signature, tags, nil
 }
 
 // serviceMode handles rename when called by OnRename callback
@@ -97,6 +174,86 @@ func serviceMode(identifier string) error {
 	})
 }
 
+// interactiveMode handles rename when called with explicit identifier
+// Operates on the file directly, suitable for all file types
+func interactiveMode(identifier string, args []string) error {
+	// Parse arguments
+	title, signature, tags, err := parseRenameArgs(args)
+	if err != nil {
+		return err
+	}
+
+	// Find file by identifier
+	pattern := filepath.Join(denoteDir, identifier+"*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to find file: %w", err)
+	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("no file found with identifier: %s", identifier)
+	}
+
+	if len(matches) > 1 {
+		return fmt.Errorf("multiple files match identifier %s", identifier)
+	}
+
+	filePath := matches[0]
+	ext := strings.ToLower(filepath.Ext(filePath))
+	supportsFrontmatter := ext == ".org" || ext == ".md" || ext == ".txt"
+
+	// Update frontmatter in file if applicable
+	if supportsFrontmatter {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+
+		// Parse existing frontmatter
+		existing, fileType, err := frontmatter.Unmarshal(content, ext)
+		if err != nil {
+			return fmt.Errorf("failed to parse frontmatter: %w", err)
+		}
+
+		// Update metadata
+		existing.Title = title
+		existing.Tags = tags
+		existing.Signature = signature
+
+		// Apply updated frontmatter
+		newContent, err := util.Apply(string(content), existing, fileType)
+		if err != nil {
+			return fmt.Errorf("failed to update frontmatter: %w", err)
+		}
+
+		// Write back to file
+		if err := os.WriteFile(filePath, []byte(newContent), 0644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+	}
+
+	// Update 9P metadata (triggers OnUpdate and OnRename callbacks for file rename)
+	return p9client.With9P(func(f *client.Fsys) error {
+		// Write title
+		if err := p9client.WriteFile(f, "n/"+identifier+"/title", title); err != nil {
+			return fmt.Errorf("failed to write title: %w", err)
+		}
+
+		// Write keywords
+		keywords := strings.Join(tags, ",")
+		if err := p9client.WriteFile(f, "n/"+identifier+"/keywords", keywords); err != nil {
+			return fmt.Errorf("failed to write keywords: %w", err)
+		}
+
+		// Write signature
+		if err := p9client.WriteFile(f, "n/"+identifier+"/signature", signature); err != nil {
+			return fmt.Errorf("failed to write signature: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // windowMode handles rename when called by user from acme window
 func windowMode(args []string) error {
 	// Get $winid
@@ -131,52 +288,10 @@ func windowMode(args []string) error {
 	}
 	identifier := matches[1]
 
-	// Parse arguments: 'Title' ==signature tag1,tag2,...
-	input := strings.Join(args, " ")
-
-	// Extract title (must be single-quoted)
-	if !strings.HasPrefix(input, "'") {
-		return fmt.Errorf("title must be single-quoted")
-	}
-
-	closeQuote := strings.Index(input[1:], "'")
-	if closeQuote == -1 {
-		return fmt.Errorf("title must be single-quoted (missing closing quote)")
-	}
-
-	title := input[1 : closeQuote+1]
-	if title == "" {
-		return fmt.Errorf("title cannot be empty")
-	}
-
-	// Extract signature and tags (everything after closing quote)
-	remainder := strings.TrimSpace(input[closeQuote+2:])
-	var signature string
-	var tags []string
-
-	if remainder != "" {
-		// Check if signature is present (starts with ==)
-		if strings.HasPrefix(remainder, "==") {
-			// Find end of signature (space before tags)
-			spaceIdx := strings.Index(remainder, " ")
-			if spaceIdx == -1 {
-				// No tags, just signature
-				signature = remainder[2:] // Skip ==
-			} else {
-				signature = remainder[2:spaceIdx] // Skip ==
-				remainder = strings.TrimSpace(remainder[spaceIdx+1:])
-			}
-		}
-
-		// Extract tags if present
-		if remainder != "" && !strings.HasPrefix(remainder, "==") {
-			// Validate tags
-			tagPattern := regexp.MustCompile(`^([\p{Ll}\p{Nd}]+,)*[\p{Ll}\p{Nd}]+$`)
-			if !tagPattern.MatchString(remainder) {
-				return fmt.Errorf("tags must be comma-delimited lowercase unicode words (no spaces)")
-			}
-			tags = strings.Split(remainder, ",")
-		}
+	// Parse arguments: [==signature] 'title' [tags] or 'title' [==signature] [tags]
+	title, signature, tags, err := parseRenameArgs(args)
+	if err != nil {
+		return err
 	}
 
 	// Read window body to check for frontmatter

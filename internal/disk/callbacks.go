@@ -38,34 +38,48 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 		return nil
 	}
 
-	// Only process files with frontmatter
-	if !SupportsFrontMatter(path) {
-		return nil
-	}
-
-	// Parse existing frontmatter to get FileType and current metadata
-	existing, fileType, err := ExtractFrontMatter(path)
-	if err != nil {
-		log.Printf("failed to extract frontmatter for %s: %v", identifier, err)
-		return nil
-	}
-
-	// Update fields from 9P metadata
-	existing.Title = title
-	existing.Tags = tags
-	existing.Signature = signature
-
-	// Build new filename using updated metadata
+	// Determine directory and extension
 	dir := filepath.Dir(path)
 	if dir == "." {
 		dir = denoteDir
 	}
+	ext := filepath.Ext(path)
 
-	ext := metadata.GetExtension(fileType)
-	filename := metadata.BuildFilename(existing, ext)
+	var fileType metadata.FileType
+	var fm *metadata.FrontMatter
+
+	// For files with frontmatter, parse and update it
+	if SupportsFrontMatter(path) {
+		// Parse existing frontmatter to get FileType and current metadata
+		existing, ftype, err := ExtractFrontMatter(path)
+		if err != nil {
+			log.Printf("failed to extract frontmatter for %s: %v", identifier, err)
+			return nil
+		}
+
+		// Update fields from 9P metadata
+		existing.Title = title
+		existing.Tags = tags
+		existing.Signature = signature
+
+		fm = existing
+		fileType = ftype
+		ext = metadata.GetExtension(fileType)
+	} else {
+		// For binary files, build metadata from 9P data
+		fm = &metadata.FrontMatter{
+			Identifier: identifier,
+			Title:      title,
+			Tags:       tags,
+			Signature:  signature,
+		}
+	}
+
+	// Build new filename using updated metadata
+	filename := metadata.BuildFilename(fm, ext)
 	newPath := filepath.Join(dir, filename)
 
-	// If filename changed, update path in 9P (which might trigger rename)
+	// If filename changed, update path in 9P (which will trigger rename)
 	if newPath != path {
 		newPath = filepath.Clean(newPath)
 		absNew, err := filepath.Abs(newPath)
@@ -85,9 +99,11 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 		}
 	}
 
-	// Apply updated frontmatter to file content
-	if err := UpdateFrontMatter(path, existing, fileType); err != nil {
-		log.Printf("failed to update front matter for %s: %v", identifier, err)
+	// Apply updated frontmatter to file content (only for supported file types)
+	if SupportsFrontMatter(path) && fm != nil {
+		if err := UpdateFrontMatter(path, fm, fileType); err != nil {
+			log.Printf("failed to update front matter for %s: %v", identifier, err)
+		}
 	}
 
 	return nil
