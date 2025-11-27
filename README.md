@@ -116,7 +116,7 @@ This command works for all files in the denote directory:
 - **Binary files** (PDFs, images): Just renames file
 - **Encrypted files** (.gpg): Updates frontmatter in window + renames file
 
-The window must be saved (Put/CryptPut) after Drename to persist changes to disk.
+The window must be `Put` after Drename to persist changes to disk.
 
 ## File Format
 
