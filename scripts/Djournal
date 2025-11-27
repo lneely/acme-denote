@@ -107,8 +107,11 @@ case *
 	title=`{echo $datefull | awk '{print tolower($0)}'}
 }
 
+# Always filter by date only (ignore time) to find existing entries for the interval
+filtertitle=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
+
 # Apply filter
-echo 'filter title:'''$"title'''' | 9p write denote/ctl
+echo 'filter title:'''$"filtertitle'''' | 9p write denote/ctl
 
 # Check if there are any results
 results=`{9p read denote/index}
