@@ -11,9 +11,43 @@ import (
 	"strings"
 )
 
+// GetFullExtension returns the full extension, including compound extensions.
+// For example: "file.md.gpg" returns ".md.gpg", "file.tar.gz" returns ".tar.gz"
+func GetFullExtension(path string) string {
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return ""
+	}
+
+	// Check if there's another extension before this one
+	pathWithoutExt := strings.TrimSuffix(path, ext)
+	innerExt := filepath.Ext(pathWithoutExt)
+
+	if innerExt != "" {
+		// Compound extension found, return both parts
+		return innerExt + ext
+	}
+
+	return ext
+}
+
+// GetContentExtension returns the content type extension, stripping encryption/compression layers.
+// For example: "file.md.gpg" returns ".md", "file.tar.gz" returns ".tar", "file.md" returns ".md"
+func GetContentExtension(path string) string {
+	fullExt := GetFullExtension(path)
+
+	// For compound extensions, take the first part
+	parts := strings.Split(fullExt, ".")
+	if len(parts) >= 3 { // ["", "md", "gpg"] for ".md.gpg"
+		return "." + parts[1]
+	}
+
+	return fullExt
+}
+
 // SupportsFrontMatter returns true if the file extension supports frontmatter.
 func SupportsFrontMatter(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(GetContentExtension(path))
 	return ext == ".org" || ext == ".md" || ext == ".txt"
 }
 

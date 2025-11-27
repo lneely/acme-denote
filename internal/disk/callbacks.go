@@ -43,7 +43,7 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 	if dir == "." {
 		dir = denoteDir
 	}
-	ext := filepath.Ext(path)
+	ext := GetFullExtension(path)
 
 	var fileType metadata.FileType
 	var fm *metadata.FrontMatter
@@ -64,7 +64,18 @@ func HandleUpdateEvent(f *client.Fsys, identifier, denoteDir string) error {
 
 		fm = existing
 		fileType = ftype
-		ext = metadata.GetExtension(fileType)
+
+		// Preserve compound extensions (e.g., .md.gpg)
+		// Replace content extension but keep wrapper layers
+		contentExt := GetContentExtension(path)
+		typeExt := metadata.GetExtension(fileType)
+		if contentExt != ext {
+			// Compound extension: replace content part with type extension
+			ext = strings.Replace(ext, contentExt, typeExt, 1)
+		} else {
+			// Simple extension: use type extension
+			ext = typeExt
+		}
 	} else {
 		// For binary files, build metadata from 9P data
 		fm = &metadata.FrontMatter{
