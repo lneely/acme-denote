@@ -164,8 +164,11 @@ func syncFrontMatter(path, identifier string) error {
 	})
 }
 
+// UpdateMetadataFunc is a function that updates metadata for a note
+type UpdateMetadataFunc func(identifier, title, keywords, signature string) error
+
 // GetAll reloads all notes from disk to 9P (discards uncommitted 9P changes)
-func GetAll() error {
+func GetAll(updateFunc UpdateMetadataFunc) error {
 	return p9client.With9P(func(f *client.Fsys) error {
 		// Read index to get all identifiers
 		indexFid, err := f.Open("index", 0)
@@ -247,15 +250,27 @@ func GetAll() error {
 				}
 			}
 
-			// Route to appropriate get function based on file type
+			// OPTIMIZATION: Circumvent 9P write operation overhead by directly manipulating in-memory data.
+			var title, keywords, signature string
 			if SupportsFrontMatter(path) {
-				if err := getDenoteFile(f, path, identifier); err != nil {
-					log.Printf("get: failed to get denote file %s: %v", identifier, err)
+				fm, _, err := ExtractFrontMatter(path)
+				if err != nil {
+					log.Printf("get: failed to extract front matter for %s: %v", identifier, err)
+					continue
 				}
+				title = fm.Title
+				keywords = strings.Join(fm.Tags, ",")
+				signature = fm.Signature
 			} else {
-				if err := getNonDenoteFile(f, path, identifier); err != nil {
-					log.Printf("get: failed to get non-denote file %s: %v", identifier, err)
-				}
+				meta := metadata.ParseFilename(path)
+				title = meta.Title
+				keywords = strings.Join(meta.Tags, ",")
+				signature = meta.Signature
+			}
+
+			// Update in-memory metadata directly
+			if err := updateFunc(identifier, title, keywords, signature); err != nil {
+				log.Printf("get: failed to update metadata for %s: %v", identifier, err)
 			}
 		}
 

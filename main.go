@@ -341,7 +341,7 @@ func main() {
 				w.Ctl("dot=addr")
 				w.Ctl("show")
 			case "Get":
-				if err := disk.GetAll(); err != nil {
+				if err := disk.GetAll(p9server.UpdateMetadataFromDisk); err != nil {
 					log.Printf("get error: %v", err)
 				}
 				refreshWindowWithDefaults(w)

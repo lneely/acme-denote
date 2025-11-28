@@ -114,6 +114,35 @@ func findNote(identifier string) (*metadata.Metadata, error) {
 	return nil, fmt.Errorf("note not found: %s", identifier)
 }
 
+// UpdateMetadataFromDisk updates note metadata directly from disk without
+// triggering callbacks or 9P protocol overhead. Used by GetAll() for bulk sync.
+func UpdateMetadataFromDisk(identifier, title, keywords, signature string) error {
+	if srv == nil {
+		return fmt.Errorf("server not running")
+	}
+
+	note, err := findNote(identifier)
+	if err != nil {
+		return err
+	}
+
+	// Parse keywords into tags
+	var tags []string
+	if keywords != "" {
+		tags = strings.Split(keywords, ",")
+		for i := range tags {
+			tags[i] = strings.TrimSpace(tags[i])
+		}
+	}
+
+	// Update fields directly (note is a pointer, so this modifies the original)
+	note.Title = title
+	note.Tags = tags
+	note.Signature = signature
+
+	return nil
+}
+
 // Getdir returns the denote directory
 // StartServer starts the 9P fileserver in the background with pre-loaded metadata.
 // initialData should contain all notes to be served - typically loaded by sync.LoadAll().
