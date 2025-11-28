@@ -111,6 +111,26 @@ Middle-click `Put` to write all metadata changes. This will rename files and, wh
 
 Reload all notes from disk, discarding any uncommitted changes in the 9P metadata. Middle-click `Get` to do this. This is useful when notes are modified outside of Acme or when you want to discard metadata changes.
 
+### Encrypted Notes
+
+You can integrate encrypted notes with [acme-crypt](https://github.com/lneely/acme-crypt) `CryptGet` and `CryptPut` commands. This allows you to work with encrypted files (e.g., GPG-encrypted) directly from acme-denote.
+
+Create a note with `New` as usual:
+
+```
+'secret note' private
+```
+
+This opens a window with a path like `/home/user/doc/20251128T120000--secret-note__private.md`. Add the appropriate encryption extension to the window path (e.g., `.gpg` for GPG encryption):
+
+```
+/home/user/doc/20251128T120000--secret-note__private.md.gpg
+```
+
+Write your note content, add `CryptPut` to the window tag, and middle-click it to save the encrypted file to disk. Then middle-click `Get` in the `/Denote/` window to refresh the 9P index from disk.
+
+**Warning:** If you accidentally click `Put` after `CryptPut`, the file will be overwritten with unencrypted content. If this happens, use `CryptPut` again to re-encrypt the file.
+
 ### Drn
 
 Update note metadata (title, tags, signature). Drn has two modes of operation:
