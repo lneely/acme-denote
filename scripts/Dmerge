@@ -80,6 +80,16 @@ if(~ $mode file) {
 		exit 1
 	}
 
+	# Verify file extensions
+	if(! ~ $srcpath *.md *.org *.txt) {
+		echo 'error: source must be .md, .org, or .txt file' >[1=2]
+		exit 1
+	}
+	if(! ~ $dstpath *.md *.org *.txt) {
+		echo 'error: destination must be .md, .org, or .txt file' >[1=2]
+		exit 1
+	}
+
 	# Extract content without frontmatter (everything after first blank line)
 	awk '
 	BEGIN { found_blank = 0 }
@@ -103,7 +113,7 @@ if(~ $mode file) {
 	rm /tmp/content.$pid
 
 	# Update all backlinks pointing to source
-	9p read denote/n/$src/backlinks | awk -F'|' '{print $1}' | while(read linkid) {
+	for(linkid in `{9p read denote/n/$src/backlinks | awk -F'|' '{print $1}'}) {
 		linkid=`{echo $linkid | awk '{gsub(/^ +| +$/, ""); print}'}
 		if(! ~ $#linkid 0) {
 			linkpath=`{9p read denote/n/$linkid/path}
@@ -134,6 +144,12 @@ if not if(~ $mode region) {
 
 	if(~ $#dstpath 0) {
 		echo 'error: destination note not found' >[1=2]
+		exit 1
+	}
+
+	# Verify file extension
+	if(! ~ $dstpath *.md *.org *.txt) {
+		echo 'error: destination must be .md, .org, or .txt file' >[1=2]
 		exit 1
 	}
 
