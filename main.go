@@ -4,6 +4,7 @@ import (
 	"denote/internal/disk"
 	p9client "denote/internal/p9/client"
 	p9server "denote/internal/p9/server"
+	"denote/pkg/config"
 	"denote/pkg/encoding/frontmatter"
 	"denote/pkg/encoding/results"
 	"denote/pkg/metadata"
@@ -26,7 +27,15 @@ const (
 	ftype = metadata.FileTypeMdYaml
 )
 
-var denoteDir = os.Getenv("HOME") + "/doc"
+// getDenoteDir returns the current denote directory.
+// Uses the server's current directory if available,
+// otherwise falls back to DefaultDenoteDir.
+func getDenoteDir() string {
+	if dir := p9server.GetDenoteDir(); dir != "" {
+		return dir
+	}
+	return config.DefaultDenoteDir
+}
 
 // Helper functions for 9P operations
 
@@ -67,7 +76,8 @@ func setFilter(f *client.Fsys, filterQuery string) error {
 
 // handleNewEvent is called when a new note is created.
 // When a new note is created in 9P, open an acme window (file created on Put).
-func handleNewEvent(f *client.Fsys, identifier, denoteDir string) error {
+func handleNewEvent(f *client.Fsys, identifier string) error {
+	denoteDir := getDenoteDir()
 	fields, err := p9client.ReadFields(f, identifier, "title", "keywords", "signature")
 	if err != nil {
 		return fmt.Errorf("failed to get metadata: %w", err)
@@ -212,7 +222,7 @@ func main() {
 	}
 
 	// Load metadata from filesystem
-	notes, err := disk.LoadAll(denoteDir)
+	notes, err := disk.LoadAll(config.DefaultDenoteDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to load notes: %v\n", err)
 	}
@@ -221,28 +231,28 @@ func main() {
 	callbacks := p9server.Callbacks{
 		OnNew: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return handleNewEvent(f, identifier, denoteDir)
+				return handleNewEvent(f, identifier)
 			})
 		},
 		OnUpdate: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return disk.HandleUpdateEvent(f, identifier, denoteDir)
+				return disk.HandleUpdateEvent(f, identifier, getDenoteDir())
 			})
 		},
 		OnRename: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return disk.HandleRenameEvent(f, identifier, denoteDir)
+				return disk.HandleRenameEvent(f, identifier, getDenoteDir())
 			})
 		},
 		OnDelete: func(identifier string) error {
 			return p9client.With9P(func(f *client.Fsys) error {
-				return disk.HandleDeleteEvent(f, identifier, denoteDir)
+				return disk.HandleDeleteEvent(f, identifier, getDenoteDir())
 			})
 		},
 	}
 
 	// 9p server startup with pre-loaded data and callbacks
-	if err := p9server.StartServer(notes, denoteDir, callbacks); err != nil {
+	if err := p9server.StartServer(notes, config.DefaultDenoteDir, callbacks); err != nil {
 		log.Fatal(err)
 	}
 

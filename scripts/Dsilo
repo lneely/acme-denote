@@ -1,0 +1,28 @@
+#!/usr/local/plan9/bin/rc
+
+# Dsilo - Switch denote directory (silo)
+# Usage: Dsilo <directory-path>
+#        Dsilo (no args - show current silo)
+
+if(~ $#* 1) {
+	newdir=$1
+
+	# Validate directory exists
+	if(! test -d $newdir) {
+		echo 'error: directory does not exist:' $newdir >[1=2]
+		exit 1
+	}
+
+	# Get absolute path
+	absdir=`{cd $newdir && pwd}
+
+	# Write cd command to ctl file
+	echo 'cd '$absdir | 9p write denote/ctl && {
+		echo 'Switched to silo:' $absdir '. You may have to refresh the Denote window.'
+		exit 0
+	}
+}
+if not {
+	echo 'Denote Directory:' `{9p read denote/dir}
+	exit 0
+}

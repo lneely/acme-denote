@@ -24,7 +24,17 @@ This installs `Denote` and all its extensions to $HOME/bin.
 
 ### Setup
 
-Start the Denote program by middle-clicking `Denote` anywhere in acme. This will open the `/Denote/` window. Notes are stored in `~/doc` by default, simply edit this in `main.go` to change your denote base directory.
+Start the Denote program by middle-clicking `Denote` anywhere in acme. This will open the `/Denote/` window.
+
+**Configuration:**
+
+Notes are stored in `~/doc` by default. To change the default denote directory, edit `pkg/config/config.go`:
+
+```go
+var DefaultDenoteDir = os.Getenv("HOME") + "/doc"
+```
+
+You can also switch between different directories at runtime using the `Dsilo` command (see [Dsilo](#dsilo)).
 
 ## Usage
 
@@ -365,6 +375,32 @@ Dbkp 20251127T140558
 
 The backup is extracted to a timestamped subdirectory within the restore directory, making it easy to identify when the backup was created.
 
+### Dsilo
+
+Concept from prot's [denote-silo](https://github.com/protesilaos/denote-silo). Switch between different denote directories (silos) at runtime without restarting the program.
+
+**Usage:**
+
+Show the current silo:
+```
+Dsilo
+```
+
+Switch to a different silo:
+```
+Dsilo /path/to/another/directory
+```
+
+**What happens when you switch silos:**
+
+- The 9P filesystem immediately points to the new directory
+- All existing notes are cleared from memory
+- New notes are loaded from the new directory
+- All subsequent operations (create, update, delete, search) use the new directory
+- The Acme log watcher tracks files in the new directory
+
+This is useful for maintaining separate collections of notes (e.g., personal notes, work notes, project notes) and switching between them seamlessly.
+
 ## Possible Future Work
 
 ### Templates
@@ -381,13 +417,6 @@ Not a core feature of acme-denote, but could be implemented as an extension (e.g
 ### Content Search
 
 Currently, it is possible to simply grep inside of the denote directory to perform a content search. If this is not convenient enough, then adding `Grep` to the `/Denote/` window tag line and performing this search transparently would not be difficult.
-
-### Multiple Denote Directories
-
-I find that it is enough to have one denote directory, but support multiple directories could be a nice feature. A possible approach is to keep the built-in directory (e.g., `$HOME/doc`) as the default, and pass in `path/to/dir` as an argument when running Denote. This could look like:
-
-- Highlight a directory path in acme
-- `2-1` chord to Denote points Denote to that directory instead of the default
 
 ### Support Query "Links"
 

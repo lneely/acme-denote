@@ -4,7 +4,7 @@ denote metadata for all files in the denote directory. The filesystem is organiz
 follows:
 
 	denote/                 (directory)  Root filesystem
-		ctl					(write-only) Control file (commands: filter <query>)
+		ctl					(write-only) Control file (commands: filter <query>, cd <path>)
 		event				(read-only)  Global event bus (listen & react to rename, update, and delete events)
 		index				(read-only)  Metadata index (respects active filter)
 		new					(write-only) Create new note (write "'title' tag1,tag2")
@@ -17,12 +17,14 @@ follows:
 				title		(read-write) Denote document title
 
 Notes:
-- Messages written to denote/ctl affect global state (e.g., filtering)
+- Messages written to denote/ctl affect global state (e.g., filtering, directory switching)
 - Filter command syntax: filter [field:]pattern where field is date|title|tag
 - Multiple filters can be specified: filter tag:journal !tag:draft
 - Titles with spaces must be quoted: filter title:"My Title"
 - Writing 'filter' with no arguments clears the active filter
 - Index respects the current filter - returns only matching notes
+- Cd command syntax: cd /path/to/directory
+- After cd, run Get to reload notes from the new directory
 - Messages written to denote/n/<identifier>/ctl may generate events that are broadcast over the global event bus
 - Writing to title or keywords triggers an update ('u') event and a rename ('r') event
 - Write 'd' to denote/n/<identifier>/ctl to delete a denote file
@@ -39,6 +41,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -103,6 +106,17 @@ type fid struct {
 }
 
 var srv *server
+
+// GetDenoteDir returns the current denote directory.
+// Returns empty string if server not yet initialized.
+func GetDenoteDir() string {
+	if srv == nil {
+		return ""
+	}
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+	return srv.denoteDir
+}
 
 // findNote finds a note by identifier in the in-memory collection
 func findNote(identifier string) (*metadata.Metadata, error) {
@@ -971,6 +985,10 @@ func (s *server) handleCtlCommand(fc *plan9.Fcall) *plan9.Fcall {
 		return s.handleFilterCommand(fc, command)
 	}
 
+	if strings.HasPrefix(command, "cd ") {
+		return s.handleCdCommand(fc, command)
+	}
+
 	return errorFcall(fc, fmt.Sprintf("unknown ctl command: %s", command))
 }
 
@@ -1018,6 +1036,64 @@ func (s *server) handleFilterCommand(fc *plan9.Fcall, command string) *plan9.Fca
 	// Store filter state
 	s.filterQuery = query
 	s.filteredNotes = filtered
+
+	return &plan9.Fcall{
+		Type:  plan9.Rwrite,
+		Tag:   fc.Tag,
+		Count: uint32(len(fc.Data)),
+	}
+}
+
+// handleCdCommand processes the 'cd' ctl command to change denote directory
+func (s *server) handleCdCommand(fc *plan9.Fcall, command string) *plan9.Fcall {
+	// Extract path after "cd " keyword
+	newPath := strings.TrimSpace(strings.TrimPrefix(command, "cd "))
+
+	if newPath == "" {
+		return errorFcall(fc, "cd: path required")
+	}
+
+	// Expand ~ to home directory
+	if strings.HasPrefix(newPath, "~") {
+		home := os.Getenv("HOME")
+		if home == "" {
+			return errorFcall(fc, "cd: cannot expand ~ (HOME not set)")
+		}
+		newPath = strings.Replace(newPath, "~", home, 1)
+	}
+
+	// Clean the path
+	newPath = filepath.Clean(newPath)
+
+	// Convert to absolute path
+	absPath, err := filepath.Abs(newPath)
+	if err != nil {
+		return errorFcall(fc, fmt.Sprintf("cd: invalid path: %v", err))
+	}
+
+	// Verify directory exists
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return errorFcall(fc, fmt.Sprintf("cd: %v", err))
+	}
+	if !info.IsDir() {
+		return errorFcall(fc, fmt.Sprintf("cd: %s is not a directory", absPath))
+	}
+
+	// Load metadata from new directory
+	newNotes, err := disk.LoadAll(absPath)
+	if err != nil {
+		return errorFcall(fc, fmt.Sprintf("cd: failed to load directory: %v", err))
+	}
+
+	// Update server state atomically
+	s.mu.Lock()
+	s.denoteDir = absPath
+	s.notes = newNotes
+	// Clear filter state when switching directories
+	s.filterQuery = ""
+	s.filteredNotes = nil
+	s.mu.Unlock()
 
 	return &plan9.Fcall{
 		Type:  plan9.Rwrite,

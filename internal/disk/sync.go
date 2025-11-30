@@ -7,8 +7,9 @@ the file name.
 package disk
 
 import (
-	"denote/pkg/metadata"
 	p9client "denote/internal/p9/client"
+	"denote/pkg/config"
+	"denote/pkg/metadata"
 	"fmt"
 	"log"
 	"os"
@@ -79,7 +80,18 @@ func WatchAcmeLog() {
 
 // isDenoteFile checks if the file is in the denote directory
 func isDenoteFile(path string) bool {
-	denoteDir := os.Getenv("HOME") + "/doc"
+	// Try to read current dir from 9p, fall back to default
+	denoteDir := config.DefaultDenoteDir
+
+	err := p9client.With9P(func(f *client.Fsys) error {
+		dir, readErr := p9client.ReadFile(f, "dir")
+		if readErr == nil && dir != "" {
+			denoteDir = strings.TrimSpace(dir)
+		}
+		return nil // Don't propagate error, just use fallback
+	})
+	_ = err // Ignore connection errors, use default
+
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false

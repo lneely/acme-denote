@@ -4,6 +4,7 @@ install:V:
 	cp scripts/Djournal $HOME/bin/Djournal
 	cp scripts/Dmerge $HOME/bin/Dmerge
 	cp scripts/Dbkp $HOME/bin/Dbkp
+	cp scripts/Dsilo $HOME/bin/Dsilo
 
 clean:V:
-	rm -f $HOME/bin/Denote $HOME/bin/Drn $HOME/bin/Djournal $HOME/bin/Dmerge $HOME/bin/Dbkp
+	rm -f $HOME/bin/Denote $HOME/bin/Drn $HOME/bin/Djournal $HOME/bin/Dmerge $HOME/bin/Dbkp $HOME/bin/Dsilo
