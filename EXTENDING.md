@@ -1,5 +1,7 @@
 # Extending acme-denote
 
+## Architecture
+
 `acme-denote` is extended by building programs upon its 9P API.
 
 ```
@@ -85,6 +87,8 @@ plumb $notepath
 ```
 
 ### Metadata Manipulation (e.g., Dmerge)
+
+`Dmerge` performs metadata manipulation, and it also illustrates an important architectural concept: the `acme-denote` program manages metadata, not content (the latter is a function of the appropriate editor). Therefore, content manipulation is performed directly on the filesystem.
 
 ```rc
 # Read source content
