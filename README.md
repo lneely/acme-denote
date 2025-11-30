@@ -252,7 +252,7 @@ Djournal -3h    # 3 hours ago
 Djournal +30m   # 30 minutes from now
 ```
 
-Supported units: `d` (days), `h` (hours), `m` (minutes)
+Supported units: `d` (days), `h` (hours), `m` (minutes). Hours and minutes is not useful except in an sub-daily intervals (e.g., hourly, not yet supported).
 
 ### Dmerge
 
