@@ -203,6 +203,14 @@ data matches '([.a-zA-Z�-\uffff0-9_/\-@=]*[a-zA-Z�-\uffff0-9_/\-=])':$twocol
 data matches '([.a-zA-Z�-\uffff0-9_/\-@=]*[a-zA-Z�-\uffff0-9_/\-=])('$addr')?'
 ```
 
+### Content Search (grep)
+
+You can easily grep the current denote directory to search for content. Use the following pattern, example with `ripgrep`:
+
+```
+rg -Hn <search-expr> `{9p read denote/dir}
+```
+
 ## Extensions
 
 Some extensions have also been ported. While these extensions, like the main program, try to stay as true as possible to the original program and be as feature-complete as possible, they are intentionally *not* exact replicas.
@@ -413,10 +421,6 @@ Not a core feature of acme-denote, but could be implemented as an extension (e.g
 - Build template variable to value mapping
 - Define common variables, e.g., `{{date}}`, `{{author}}`
 - Render template and write to the active window body (`echo <content> | 9p write acme/$winid/body`)
-
-### Content Search
-
-Currently, it is possible to simply grep inside of the denote directory to perform a content search. If this is not convenient enough, then adding `Grep` to the `/Denote/` window tag line and performing this search transparently would not be difficult.
 
 ### Support Query "Links"
 
