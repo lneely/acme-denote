@@ -243,14 +243,25 @@ func main() {
 
 	// 9p server startup with pre-loaded data and callbacks
 	if err := p9server.StartServer(notes, denoteDir, callbacks); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to start fileserver: %v\n", err)
+		log.Fatal(err)
 	}
 
 	// start acme log watcher
 	go disk.WatchAcmeLog()
 
-	// open window
-	if w = acme.Show(wname); w == nil {
+	// open window - look for existing /Denote/ window across all processes
+	if wins, err := acme.Windows(); err == nil {
+		for _, winInfo := range wins {
+			if winInfo.Name == wname {
+				// Found existing window, open it
+				if w, err = acme.Open(winInfo.ID, nil); err == nil {
+					break
+				}
+			}
+		}
+	}
+	// If no existing window found, create new one
+	if w == nil {
 		if w, err = acme.New(); err != nil {
 			log.Fatal(err)
 		}

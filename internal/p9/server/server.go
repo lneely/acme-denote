@@ -34,6 +34,7 @@ import (
 	"denote/internal/disk"
 	"denote/pkg/encoding/results"
 	"denote/pkg/metadata"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -41,6 +42,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"9fans.net/go/plan9"
@@ -165,13 +167,35 @@ func StartServer(initialData metadata.Results, denoteDir string, callbacks Callb
 
 	sockPath := ns + "/denote"
 
-	// Remove old socket if it exists
-	os.Remove(sockPath)
+	// Try to create Unix domain socket listener
+	// Use stale socket detection like acme (see /usr/local/plan9/src/lib9/announce.c)
+	var listener net.Listener
+	var err error
+	for attempts := 0; attempts < 2; attempts++ {
+		listener, err = net.Listen("unix", sockPath)
+		if err == nil {
+			break // Successfully bound to socket
+		}
 
-	// Create Unix domain socket listener
-	listener, err := net.Listen("unix", sockPath)
-	if err != nil {
+		// Check if error is "address already in use"
+		if errors.Is(err, syscall.EADDRINUSE) {
+			// Try to connect to see if socket is live or stale
+			conn, dialErr := net.Dial("unix", sockPath)
+			if dialErr == nil {
+				// Connection succeeded - another instance is running
+				conn.Close()
+				return fmt.Errorf("Denote already running in this namespace")
+			}
+			// Connection failed - socket is stale, remove it and retry
+			os.Remove(sockPath)
+			continue
+		}
+
+		// Some other error
 		return fmt.Errorf("failed to listen on socket: %w", err)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to listen on socket after cleanup: %w", err)
 	}
 
 	// Start accepting connections in background
