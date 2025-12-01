@@ -113,7 +113,9 @@ func Unmarshal(content []byte, ext string) (*metadata.FrontMatter, metadata.File
 			if m := regexp.MustCompile(`(?m)^tags:[ \t]*\[(.+?)\]$`).FindStringSubmatch(yamlContent); m != nil {
 				tags := strings.Split(m[1], ",")
 				for i, t := range tags {
-					tags[i] = strings.TrimSpace(t)
+					t = strings.TrimSpace(t)
+					t = strings.Trim(t, `"'`)
+					tags[i] = t
 				}
 				fm.Tags = tags
 			}
@@ -135,7 +137,9 @@ func Unmarshal(content []byte, ext string) (*metadata.FrontMatter, metadata.File
 				if m := regexp.MustCompile(`(?m)^tags[ \t]*=[ \t]*\[(.+?)\]$`).FindStringSubmatch(tomlContent); m != nil {
 					tags := strings.Split(m[1], ",")
 					for i, t := range tags {
-						tags[i] = strings.TrimSpace(t)
+						t = strings.TrimSpace(t)
+						t = strings.Trim(t, `"'`)
+						tags[i] = t
 					}
 					fm.Tags = tags
 				}
