@@ -104,7 +104,7 @@ if(~ $mode file) {
 			echo ''
 			echo '* * *'
 			echo ''
-			echo $annotation $srctitle
+			echo $annotation $"srctitle
 			echo ''
 		}
 		cat /tmp/content.$pid
@@ -185,7 +185,7 @@ if not if(~ $mode region) {
 			echo $regionannotation
 			echo ''
 		}
-		echo "$formatted"
+		echo $"formatted
 	} > /tmp/merge.$pid
 
 	# Write merged content to destination
