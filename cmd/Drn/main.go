@@ -16,8 +16,6 @@ import (
 	"9fans.net/go/plan9/client"
 )
 
-var denoteDir = os.Getenv("HOME") + "/doc"
-
 func main() {
 	// Check if running in service mode (called by OnRename callback)
 	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "--id=") {
@@ -117,6 +115,12 @@ func parseRenameArgs(args []string) (title, signature string, tags []string, err
 // This replicates the logic from HandleRenameEvent
 func serviceMode(identifier string) error {
 	return p9client.With9P(func(f *client.Fsys) error {
+		// Get current denote directory from 9P server
+		currentDir, err := p9client.ReadFile(f, "dir")
+		if err != nil {
+			return fmt.Errorf("failed to read current directory: %w", err)
+		}
+
 		// Get new path from 9P server
 		newPath, err := p9client.ReadFile(f, "n/"+identifier+"/path")
 		if err != nil {
@@ -129,7 +133,7 @@ func serviceMode(identifier string) error {
 		}
 
 		// Find old file on disk (matches with or without signature)
-		pattern := filepath.Join(denoteDir, identifier+"*")
+		pattern := filepath.Join(currentDir, identifier+"*")
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return fmt.Errorf("failed to find file: %w", err)
@@ -148,7 +152,7 @@ func serviceMode(identifier string) error {
 			if err != nil {
 				return fmt.Errorf("failed to resolve new path: %w", err)
 			}
-			absBase, err := filepath.Abs(denoteDir)
+			absBase, err := filepath.Abs(currentDir)
 			if err != nil {
 				return fmt.Errorf("failed to resolve base directory: %w", err)
 			}
@@ -183,22 +187,40 @@ func interactiveMode(identifier string, args []string) error {
 		return err
 	}
 
-	// Find file by identifier
-	pattern := filepath.Join(denoteDir, identifier+"*")
-	matches, err := filepath.Glob(pattern)
+	var currentDir string
+	var filePath string
+
+	// Get current directory and find file
+	err = p9client.With9P(func(f *client.Fsys) error {
+		// Get current denote directory from 9P server
+		dir, err := p9client.ReadFile(f, "dir")
+		if err != nil {
+			return fmt.Errorf("failed to read current directory: %w", err)
+		}
+		currentDir = dir
+
+		// Find file by identifier
+		pattern := filepath.Join(currentDir, identifier+"*")
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return fmt.Errorf("failed to find file: %w", err)
+		}
+
+		if len(matches) == 0 {
+			return fmt.Errorf("no file found with identifier: %s", identifier)
+		}
+
+		if len(matches) > 1 {
+			return fmt.Errorf("multiple files match identifier %s", identifier)
+		}
+
+		filePath = matches[0]
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to find file: %w", err)
+		return err
 	}
 
-	if len(matches) == 0 {
-		return fmt.Errorf("no file found with identifier: %s", identifier)
-	}
-
-	if len(matches) > 1 {
-		return fmt.Errorf("multiple files match identifier %s", identifier)
-	}
-
-	filePath := matches[0]
 	ext := strings.ToLower(filepath.Ext(filePath))
 	supportsFrontmatter := ext == ".org" || ext == ".md" || ext == ".txt"
 

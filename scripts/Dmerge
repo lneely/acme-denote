@@ -1,4 +1,4 @@
-#!/usr/local/plan9/bin/rc
+#!/usr/bin/env rc
 
 # Merge - Merge notes or regions
 # Usage: Dmerge <source-id> <dest-id>          (file merge)
