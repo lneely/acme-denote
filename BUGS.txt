@@ -1,0 +1,3 @@
+- Duplicate identifier in frontmatter results in file deletion. Should instead warn user or automatically correct the identifier (e.g., add 1 second or use the filename if the filename has it).
+
+- Automatic metadata update and file only works from current working directory. Should also work for subdirs. WORKAROUND: `Dsilo` into the subdir.
