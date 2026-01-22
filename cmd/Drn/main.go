@@ -132,8 +132,12 @@ func serviceMode(identifier string) error {
 			return nil
 		}
 
-		// Find old file on disk (matches with or without signature)
-		pattern := filepath.Join(currentDir, identifier+"*")
+		// Find old file on disk using directory from newPath
+		dir := filepath.Dir(newPath)
+		if dir == "." {
+			dir = currentDir
+		}
+		pattern := filepath.Join(dir, identifier+"*")
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return fmt.Errorf("failed to find file: %w", err)
@@ -199,8 +203,20 @@ func interactiveMode(identifier string, args []string) error {
 		}
 		currentDir = dir
 
+		// Get path from metadata to find correct directory
+		path, err := p9client.ReadFile(f, "n/"+identifier+"/path")
+		if err != nil || path == "" {
+			path = currentDir
+		}
+
+		// Use directory from metadata path
+		searchDir := filepath.Dir(path)
+		if searchDir == "." {
+			searchDir = currentDir
+		}
+
 		// Find file by identifier
-		pattern := filepath.Join(currentDir, identifier+"*")
+		pattern := filepath.Join(searchDir, identifier+"*")
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return fmt.Errorf("failed to find file: %w", err)
