@@ -282,7 +282,7 @@ func main() {
 	}
 	defer w.CloseFiles()
 
-	if _, err = w.Write("tag", []byte("New Put Remove Get")); err != nil {
+	if _, err = w.Write("tag", []byte("New Put Remove Get Path")); err != nil {
 		w.Del(true)
 		log.Fatal(fmt.Errorf("failed to set tag: %w", err))
 	}
@@ -404,6 +404,25 @@ func main() {
 					return applyIndexChanges(f, current, updated)
 				}); err != nil {
 					log.Printf("failed to apply changes: %v", err)
+				}
+			case "Path":
+				input := strings.TrimSpace(string(e.Arg))
+				if input == "" {
+					input = strings.TrimSpace(string(e.Text))
+				}
+				if input == "" || !isIdentifier(input) {
+					break
+				}
+
+				if err := p9client.With9P(func(f *client.Fsys) error {
+					path, err := p9client.ReadFile(f, "n/"+input+"/path")
+					if err != nil {
+						return fmt.Errorf("failed to read path: %w", err)
+					}
+					fmt.Println(path)
+					return nil
+				}); err != nil {
+					log.Printf("path error: %v", err)
 				}
 			default:
 				w.WriteEvent(e)
