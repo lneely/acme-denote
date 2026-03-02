@@ -40,7 +40,7 @@ if(! ~ $#* 0) {
 }
 
 # Calculate reference timestamp based on interval
-epoch=`{date -n}
+epoch=`{9 date -n}
 
 # Adjust epoch to interval start if no offset provided
 if(~ $#* 0) {
@@ -48,7 +48,7 @@ if(~ $#* 0) {
 	case weekly
 		# Get start of week (Monday)
 		# date outputs: Sun Nov 24 07:30:00 EST 2025
-		dow=`{date $epoch | awk '{print $1}'}
+		dow=`{9 date $epoch | awk '{print $1}'}
 		# Calculate days since Monday (Mon=0, Tue=1, ..., Sun=6)
 		daysback=0
 		switch($dow) {
@@ -64,20 +64,20 @@ if(~ $#* 0) {
 	case monthly
 		# Get start of month (day 1)
 		# Extract year, month from current date
-		yearmonth=`{date $epoch | awk '{print $6 " " $2}'}
+		yearmonth=`{9 date $epoch | awk '{print $6 " " $2}'}
 		# Use date with format: Nov 1 2025
-		epoch=`{date -n `{echo $yearmonth | awk '{print $2 " 1 " $1}'}}
+		epoch=`{9 date -n `{echo $yearmonth | awk '{print $2 " 1 " $1}'}}
 	case yearly
 		# Get start of year (Jan 1)
-		year=`{date $epoch | awk '{print $6}'}
-		epoch=`{date -n 'Jan 1 '^$year}
+		year=`{9 date $epoch | awk '{print $6}'}
+		epoch=`{9 date -n 'Jan 1 '^$year}
 	}
 }
 
 targetepoch=`{hoc -e 'int('$epoch' + '$offset')'}
 
 # Get formatted date (e.g., "Wednesday 12 November 2025 22:11")
-datefull=`{date $targetepoch | awk '
+datefull=`{9 date $targetepoch | awk '
 BEGIN {
     m["Jan"]="January"; m["Feb"]="February"; m["Mar"]="March"
     m["Apr"]="April"; m["May"]="May"; m["Jun"]="June"

@@ -376,8 +376,8 @@ func main() {
 					break
 				}
 
-				// Parse the window content
-				updated, err := results.Unmarshal(body)
+				// Parse the window content with strict validation
+				updated, err := results.UnmarshalStrict(body)
 				if err != nil {
 					log.Printf("failed to parse window: %v", err)
 					break

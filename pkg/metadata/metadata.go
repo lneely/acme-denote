@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Metadata is the metadata encoded into Denote-style
@@ -87,6 +88,30 @@ func ParseFilename(path string) *Metadata {
 	}
 
 	return note
+}
+
+// IsValidTag returns true if the tag contains only lowercase letters, other unicode letters, or digits.
+func IsValidTag(tag string) bool {
+	for _, r := range tag {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+		if unicode.IsLetter(r) && unicode.IsUpper(r) {
+			return false
+		}
+	}
+	return len(tag) > 0
+}
+
+// ValidateTags checks all tags and returns invalid ones.
+func ValidateTags(tags []string) []string {
+	var invalid []string
+	for _, tag := range tags {
+		if !IsValidTag(tag) {
+			invalid = append(invalid, tag)
+		}
+	}
+	return invalid
 }
 
 // GenerateIdentifier creates a new identifier timestamp.

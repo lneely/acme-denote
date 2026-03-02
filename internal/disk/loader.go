@@ -5,6 +5,7 @@ import (
 	"denote/pkg/metadata"
 	"denote/pkg/util"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -169,6 +170,10 @@ func LoadAll(dir string) (metadata.Results, error) {
 
 		// Only include files with valid identifiers
 		if note.Identifier != "" {
+			// Warn on invalid tags but continue loading
+			if invalid := metadata.ValidateTags(note.Tags); len(invalid) > 0 {
+				log.Printf("warning: %s:1 invalid tags %v (must be lowercase alphanumeric)", path, invalid)
+			}
 			notes = append(notes, note)
 		}
 

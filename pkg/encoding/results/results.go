@@ -3,6 +3,7 @@ package results
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -27,7 +28,18 @@ func Marshal(rs metadata.Results) []byte {
 
 // Unmarshal parses pipe-delimited byte data into Results.
 // Format: identifier | title | tags (comma-separated)
+// Invalid tags produce warnings but parsing continues.
 func Unmarshal(data []byte) (metadata.Results, error) {
+	return unmarshal(data, false)
+}
+
+// UnmarshalStrict parses pipe-delimited byte data into Results with strict tag validation.
+// Returns an error if any tags are invalid.
+func UnmarshalStrict(data []byte) (metadata.Results, error) {
+	return unmarshal(data, true)
+}
+
+func unmarshal(data []byte, strict bool) (metadata.Results, error) {
 	var results metadata.Results
 	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
 	// Allow lowercase Latin letters, other letters (CJK, etc.), and digits, no spaces
@@ -55,7 +67,10 @@ func Unmarshal(data []byte) (metadata.Results, error) {
 		var tags []string
 		if tagsStr != "" {
 			if !tagPattern.MatchString(tagsStr) {
-				return nil, fmt.Errorf("line %d: tags must be comma-delimited lowercase unicode words (no spaces): got '%s'", lineNum+1, tagsStr)
+				if strict {
+					return nil, fmt.Errorf("line %d: tags must be comma-delimited lowercase unicode words (no spaces): got '%s'", lineNum+1, tagsStr)
+				}
+				log.Printf("warning: line %d: invalid tags '%s' (must be lowercase alphanumeric)", lineNum+1, tagsStr)
 			}
 			tags = strings.Split(tagsStr, ",")
 		} else {
