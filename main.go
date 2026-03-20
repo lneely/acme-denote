@@ -3,7 +3,6 @@ package main
 import (
 	"denote/internal/disk"
 	p9client "denote/internal/p9/client"
-	p9server "denote/internal/p9/server"
 	"denote/pkg/config"
 	"denote/pkg/encoding/frontmatter"
 	"denote/pkg/encoding/results"
@@ -28,10 +27,8 @@ const (
 )
 
 // getDenoteDir returns the current denote directory.
-// Uses the server's current directory if available,
-// otherwise falls back to DefaultDenoteDir.
 func getDenoteDir() string {
-	if dir := p9server.GetDenoteDir(); dir != "" {
+	if dir := os.Getenv("DENOTE_DIR"); dir != "" {
 		return dir
 	}
 	return config.DefaultDenoteDir
@@ -168,6 +165,53 @@ func handleNewEvent(f *client.Fsys, identifier string) error {
 	return nil
 }
 
+// handleServerEvents listens to the denotesrv event stream and handles events
+func handleServerEvents() {
+	for {
+		err := p9client.With9P(func(f *client.Fsys) error {
+			eventFid, err := f.Open("event", 0)
+			if err != nil {
+				return err
+			}
+			defer eventFid.Close()
+
+			buf := make([]byte, 4096)
+			for {
+				n, err := eventFid.Read(buf)
+				if err != nil {
+					return err
+				}
+				if n == 0 {
+					continue
+				}
+
+				line := strings.TrimSpace(string(buf[:n]))
+				parts := strings.SplitN(line, " ", 2)
+				if len(parts) < 2 {
+					continue
+				}
+
+				eventType := parts[0]
+				identifier := parts[1]
+
+				switch eventType {
+				case "n": // new
+					handleNewEvent(f, identifier)
+				case "u": // update
+					disk.HandleUpdateEvent(f, identifier, getDenoteDir())
+				case "r": // rename
+					disk.HandleRenameEvent(f, identifier, getDenoteDir())
+				case "d": // delete
+					disk.HandleDeleteEvent(f, identifier, getDenoteDir())
+				}
+			}
+		})
+		if err != nil {
+			log.Printf("event stream error: %v, reconnecting...", err)
+		}
+	}
+}
+
 func main() {
 	var err error
 	var w *acme.Win
@@ -221,42 +265,32 @@ func main() {
 		}
 	}
 
-	// Load metadata from filesystem
-	notes, err := disk.LoadAll(config.DefaultDenoteDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to load notes: %v\n", err)
+	// Connect to denotesrv, auto-starting if needed
+	if err := p9client.With9P(func(f *client.Fsys) error {
+		return nil // Just test connection
+	}); err != nil {
+		// Try to start denotesrv
+		cmd := exec.Command("denotesrv", "start")
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("failed to start denotesrv: %v", err)
+		}
+		// Wait for server to be ready
+		for i := 0; i < 10; i++ {
+			if err := p9client.With9P(func(f *client.Fsys) error {
+				return nil
+			}); err == nil {
+				break
+			}
+			if i == 9 {
+				log.Fatal("denotesrv failed to start")
+			}
+		}
 	}
 
-	// Setup callbacks for note operations
-	callbacks := p9server.Callbacks{
-		OnNew: func(identifier string) error {
-			return p9client.With9P(func(f *client.Fsys) error {
-				return handleNewEvent(f, identifier)
-			})
-		},
-		OnUpdate: func(identifier string) error {
-			return p9client.With9P(func(f *client.Fsys) error {
-				return disk.HandleUpdateEvent(f, identifier, getDenoteDir())
-			})
-		},
-		OnRename: func(identifier string) error {
-			return p9client.With9P(func(f *client.Fsys) error {
-				return disk.HandleRenameEvent(f, identifier, getDenoteDir())
-			})
-		},
-		OnDelete: func(identifier string) error {
-			return p9client.With9P(func(f *client.Fsys) error {
-				return disk.HandleDeleteEvent(f, identifier, getDenoteDir())
-			})
-		},
-	}
+	// Start event handler for server events
+	go handleServerEvents()
 
-	// 9p server startup with pre-loaded data and callbacks
-	if err := p9server.StartServer(notes, config.DefaultDenoteDir, callbacks); err != nil {
-		log.Fatal(err)
-	}
-
-	// start acme log watcher
+	// Start acme log watcher
 	go disk.WatchAcmeLog()
 
 	// open window - look for existing /Denote/ window across all processes
@@ -362,9 +396,7 @@ func main() {
 				w.Ctl("dot=addr")
 				w.Ctl("show")
 			case "Get":
-				if err := disk.GetAll(p9server.UpdateMetadataFromDisk); err != nil {
-					log.Printf("get error: %v", err)
-				}
+				// Refresh from server
 				refreshWindowWithDefaults(w)
 				w.Addr("#0")
 				w.Ctl("dot=addr")
