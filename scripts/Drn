@@ -1,0 +1,72 @@
+#!/usr/local/plan9/bin/rc
+# Drn - rename denote note metadata
+# usage: Drn [identifier] 'title' [==signature] [tags]
+
+rfork e
+
+fn usage {
+	echo 'usage: Drn [identifier] ''title'' [==signature] [tags]' >[1=2]
+	exit usage
+}
+
+if(~ $#* 0) usage
+
+# Check if first arg is identifier
+id=()
+if(~ $1 [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]) {
+	id=$1
+	shift
+}
+if not {
+	# Extract from window tag
+	if(~ $winid '') {
+		echo 'Drn: $winid not set' >[1=2]
+		exit 'no winid'
+	}
+	tag=`{9p read acme/$winid/tag}
+	id=`{echo $tag | grep -o '[0-9]\{8\}T[0-9]\{6\}'}
+	if(~ $#id 0) {
+		echo 'Drn: no identifier in window' >[1=2]
+		exit 'no id'
+	}
+}
+
+if(~ $#* 0) usage
+
+# Parse: 'title' [==sig] [tags] or ==sig 'title' [tags]
+sig=''
+title=''
+tags=''
+
+args=$"*
+
+# Check for leading ==signature
+if(~ $1 ==*) {
+	sig=`{echo $1 | sed 's/^==//'}
+	shift
+	args=$"*
+}
+
+# Title is first arg (should be quoted in input)
+title=$1
+shift
+
+# Remaining args
+for(a in $*) {
+	if(~ $a ==*) {
+		sig=`{echo $a | sed 's/^==//'}
+	}
+	if not {
+		if(~ $tags '') {
+			tags=$a
+		}
+		if not {
+			tags=$tags^','$a
+		}
+	}
+}
+
+# Write to 9P
+echo -n $title | 9p write denote/n/$id/title
+echo -n $tags | 9p write denote/n/$id/keywords
+echo -n $sig | 9p write denote/n/$id/signature
