@@ -1,27 +1,25 @@
-#!/usr/bin/env rc
+#!/usr/local/plan9/bin/rc
 
 # Dbkp - Backup and restore denote directory
 # Usage: Dbkp                    (create backup)
+#        Dbkp l                  (list backups)
 #        Dbkp YYYYMMddTHHmmss    (restore backup)
 
-# Configuration
 backupdir=$HOME/Dbkp
+mnt=$DENOTE_9MOUNT
+if(~ $#mnt 0) mnt=$HOME/mnt/denote
 
-
-# get denotedir
-denotedir=`{9p read denote/dir}
+denotedir=`{cat $mnt/dir}
 if(~ $#denotedir 0 || ~ $denotedir '') {
-	echo 'error: could not read denote directory from server' >[1=2]
-	echo 'ensure denote server is running' >[1=2]
+	echo 'error: could not read denote directory' >[1=2]
 	exit 1
 }
 denotebase=`{basename $denotedir}
 
-# create backupdir
 mkdir -p $backupdir
 
-# parse args
-if(~ $#* 0) { # backup mode
+if(~ $#* 0) {
+	# Backup mode
 	timestamp=`{9 date | awk 'BEGIN {
 		m["Jan"]=1; m["Feb"]=2; m["Mar"]=3; m["Apr"]=4
 		m["May"]=5; m["Jun"]=6; m["Jul"]=7; m["Aug"]=8
@@ -32,13 +30,10 @@ if(~ $#* 0) { # backup mode
 	}'}
 
 	backupfile=$backupdir/$timestamp'-'$denotebase'-dbkp.tar.gz'
-
-	# create temporary directory and copy denote contents there
 	timestampdir=$backupdir/$timestamp
 	mkdir -p $timestampdir
 	cp -rf $denotedir/* $timestampdir
 
-	# build tarball and cleanup temp dir
 	echo 'Creating backup:' $backupfile
 	cd $backupdir
 	9 tar cvzf $backupfile $timestamp
@@ -52,16 +47,12 @@ if(~ $#* 0) { # backup mode
 		exit 1
 	}
 }
-
-if not if(~ $#* 1) { # restore or list mode
-
-	# check for list mode
+if not if(~ $#* 1) {
 	if(~ $1 l) {
 		ls $backupdir | awk -F'[-.]' '{print $1}' | awk -F'/' '{print $NF}'
 		exit 0
 	}
 
-	# validate timestamp argument
 	timestamp=$1
 	if(! echo $timestamp | 9 grep '^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]$' >/dev/null >[2=1]) {
 		echo 'error: invalid timestamp format (expected YYYYMMddTHHmmss)' >[1=2]
@@ -71,12 +62,10 @@ if not if(~ $#* 1) { # restore or list mode
 	backupfile=$backupdir/$timestamp'-'$denotebase'-dbkp.tar.gz'
 	if(! test -f $backupfile) {
 		echo 'error: backup file not found:' $backupfile >[1=2]
-		echo 'available backups:' >[1=2]
 		ls $backupdir/*-$denotebase-dbkp.tar.gz >[1=2]
 		exit 1
 	}
 
-	# extract tarball to restore directory
 	restoredir=$denotedir/restore
 	mkdir -p $restoredir
 	echo 'Restoring backup to:' $restoredir
@@ -91,7 +80,6 @@ if not if(~ $#* 1) { # restore or list mode
 		exit 1
 	}
 }
-
 if not {
 	echo 'usage: Dbkp                   (create backup)' >[1=2]
 	echo '       Dbkp l                 (list backups)' >[1=2]

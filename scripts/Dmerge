@@ -1,17 +1,14 @@
-#!/usr/bin/env rc
+#!/usr/local/plan9/bin/rc
 
-# Merge - Merge notes or regions
+# Dmerge - Merge notes or regions
 # Usage: Dmerge <source-id> <dest-id>          (file merge)
 #        Dmerge <dest-id> [format]             (region merge, in acme)
-# Formats: plain, plain-indented, org-src, org-quote, org-example, md-quote, md-fence
 
-# Annotation for merged files (set to '' to disable)
 annotation='MERGED FILE:'
-
-# Annotation for merged regions (set to '' to disable)
 regionannotation='MERGED REGION:'
+mnt=$DENOTE_9MOUNT
+if(~ $#mnt 0) mnt=$HOME/mnt/denote
 
-# Check for selection if in acme
 hasselection=0
 if(! ~ $winid '') {
 	selection=`{9p read acme/$winid/rdsel}
@@ -20,29 +17,22 @@ if(! ~ $winid '') {
 	}
 }
 
-# Parse arguments and determine mode
 if(~ $#* 2) {
-	# Two args: region merge with format OR file merge
 	if(~ $hasselection 1) {
-		# Region merge with format
 		dst=$1
 		format=$2
 		mode=region
-
-		# Extract source note ID from window tag
 		tag=`{9p read acme/$winid/tag}
 		filename=`{echo $tag | awk '{for(i=1;i<=NF;i++) if($i ~ /[0-9]{8}T[0-9]{6}/) {print $i; exit}}'}
 		src=`{echo $filename | sed 's/--.*//'}
 	}
 	if not {
-		# File merge
 		src=$1
 		dst=$2
 		mode=file
 	}
 }
 if not if(~ $#* 1) {
-	# One arg: region merge (plain format)
 	if(~ $winid '') {
 		echo 'region merge requires running from acme window' >[1=2]
 		exit 1
@@ -51,12 +41,9 @@ if not if(~ $#* 1) {
 		echo 'no text selected' >[1=2]
 		exit 1
 	}
-
 	dst=$1
 	format=plain
 	mode=region
-
-	# Extract source note ID from window tag
 	tag=`{9p read acme/$winid/tag}
 	filename=`{echo $tag | awk '{for(i=1;i<=NF;i++) if($i ~ /[0-9]{8}T[0-9]{6}/) {print $i; exit}}'}
 	src=`{echo $filename | sed 's/--.*//'}
@@ -66,21 +53,16 @@ if not {
 	exit 1
 }
 
-# Branch based on mode
 if(~ $mode file) {
-	# FILE MERGE MODE
-
-	# Read paths and titles
-	srcpath=`{9p read denote/n/$src/path}
-	dstpath=`{9p read denote/n/$dst/path}
-	srctitle=`{9p read denote/n/$src/title}
+	srcpath=`{cat $mnt/n/$src/path}
+	dstpath=`{cat $mnt/n/$dst/path}
+	srctitle=`{cat $mnt/n/$src/title}
 
 	if(~ $#srcpath 0 || ~ $#dstpath 0) {
 		echo 'error: note not found' >[1=2]
 		exit 1
 	}
 
-	# Verify file extensions
 	if(! ~ $srcpath *.md *.org *.txt) {
 		echo 'error: source must be .md, .org, or .txt file' >[1=2]
 		exit 1
@@ -90,14 +72,12 @@ if(~ $mode file) {
 		exit 1
 	}
 
-	# Extract content without frontmatter (everything after first blank line)
 	awk '
 	BEGIN { found_blank = 0 }
 	found_blank { print }
 	!found_blank && /^$/ { found_blank = 1 }
 	' $srcpath > /tmp/content.$pid
 
-	# Append source content to destination with optional annotation
 	{
 		cat $dstpath
 		if(! ~ $annotation '') {
@@ -112,13 +92,11 @@ if(~ $mode file) {
 
 	rm /tmp/content.$pid
 
-	# Update all backlinks pointing to source
-	for(linkid in `{9p read denote/n/$src/backlinks | awk -F'|' '{print $1}'}) {
+	for(linkid in `{cat $mnt/n/$src/backlinks | awk -F'|' '{print $1}'}) {
 		linkid=`{echo $linkid | awk '{gsub(/^ +| +$/, ""); print}'}
 		if(! ~ $#linkid 0) {
-			linkpath=`{9p read denote/n/$linkid/path}
+			linkpath=`{cat $mnt/n/$linkid/path}
 			if(! ~ $#linkpath 0) {
-				# Replace denote:src with denote:dst in the file
 				sed 's/denote:'$src'/denote:'$dst'/g' $linkpath > /tmp/relink.$pid
 				cp /tmp/relink.$pid $linkpath
 				rm /tmp/relink.$pid
@@ -126,34 +104,27 @@ if(~ $mode file) {
 		}
 	}
 
-	# Write merged content to destination
 	cp /tmp/merge.$pid $dstpath
 	rm /tmp/merge.$pid
 
-	# Delete source note
-	echo 'd' | 9p write denote/n/$src/ctl
+	echo 'd' > $mnt/n/$src/ctl
 
 	echo 'Merged' $src 'into' $dst
 }
 
 if not if(~ $mode region) {
-	# REGION MERGE MODE
-
-	# Read destination path
-	dstpath=`{9p read denote/n/$dst/path}
+	dstpath=`{cat $mnt/n/$dst/path}
 
 	if(~ $#dstpath 0) {
 		echo 'error: destination note not found' >[1=2]
 		exit 1
 	}
 
-	# Verify file extension
 	if(! ~ $dstpath *.md *.org *.txt) {
 		echo 'error: destination must be .md, .org, or .txt file' >[1=2]
 		exit 1
 	}
 
-	# Apply formatting to selection
 	switch($format) {
 	case plain
 		formatted=$selection
@@ -171,11 +142,9 @@ if not if(~ $mode region) {
 		formatted=`{echo '```'; echo $selection; echo '```'}
 	case *
 		echo 'unknown format:' $format >[1=2]
-		echo 'valid formats: plain, plain-indented, org-src, org-quote, org-example, md-quote, md-fence' >[1=2]
 		exit 1
 	}
 
-	# Append formatted selection to destination with optional annotation
 	{
 		cat $dstpath
 		if(! ~ $regionannotation '') {
@@ -188,11 +157,9 @@ if not if(~ $mode region) {
 		echo $"formatted
 	} > /tmp/merge.$pid
 
-	# Write merged content to destination
 	cp /tmp/merge.$pid $dstpath
 	rm /tmp/merge.$pid
 
-	# Replace selection with link to destination
 	echo -n 'denote:'$dst | 9p write acme/$winid/wrsel
 
 	echo 'Region merged from' $src 'into' $dst '(format:' $format')'

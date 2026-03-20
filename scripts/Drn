@@ -1,8 +1,11 @@
 #!/usr/local/plan9/bin/rc
+
 # Drn - rename denote note metadata
 # usage: Drn [identifier] 'title' [==signature] [tags]
 
-rfork e
+mnt=$DENOTE_9MOUNT
+if(~ $#mnt 0) mnt=$HOME/mnt/denote
+if(~ $#mnt 0) mnt=$HOME/mnt/denote
 
 fn usage {
 	echo 'usage: Drn [identifier] ''title'' [==signature] [tags]' >[1=2]
@@ -38,16 +41,13 @@ sig=''
 title=''
 tags=''
 
-args=$"*
-
 # Check for leading ==signature
 if(~ $1 ==*) {
 	sig=`{echo $1 | sed 's/^==//'}
 	shift
-	args=$"*
 }
 
-# Title is first arg (should be quoted in input)
+# Title is first arg
 title=$1
 shift
 
@@ -66,7 +66,7 @@ for(a in $*) {
 	}
 }
 
-# Write to 9P
-echo -n $title | 9p write denote/n/$id/title
-echo -n $tags | 9p write denote/n/$id/keywords
-echo -n $sig | 9p write denote/n/$id/signature
+# Write to filesystem
+echo -n $title > $mnt/n/$id/title
+echo -n $tags > $mnt/n/$id/keywords
+echo -n $sig > $mnt/n/$id/signature
