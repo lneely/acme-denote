@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -171,25 +170,21 @@ func main() {
 					log.Printf("failed to read window body: %v", err)
 					break
 				}
-				updated, err := results.UnmarshalStrict(body)
+				entries, err := results.UnmarshalStrict(body)
 				if err != nil {
 					log.Printf("failed to parse window: %v", err)
 					break
 				}
-				var current metadata.Results
-				err = p9client.With9P(func(f *client.Fsys) error {
-					if err := setFilter(f, ""); err != nil {
-						return err
-					}
-					current, err = readIndex(f)
-					return err
-				})
-				if err != nil {
-					log.Printf("failed to get current results: %v", err)
-					break
-				}
 				if err := p9client.With9P(func(f *client.Fsys) error {
-					return applyIndexChanges(f, current, updated)
+					for _, e := range entries {
+						if err := p9client.WriteFile(f, "n/"+e.Identifier+"/title", e.Title); err != nil {
+							return err
+						}
+						if err := p9client.WriteFile(f, "n/"+e.Identifier+"/keywords", strings.Join(e.Tags, ",")); err != nil {
+							return err
+						}
+					}
+					return nil
 				}); err != nil {
 					log.Printf("failed to apply changes: %v", err)
 				}
@@ -315,31 +310,6 @@ func parseArgs(s string) []string {
 		args[i] = strings.TrimFunc(args[i], unicode.IsSpace)
 	}
 	return args
-}
-
-func applyIndexChanges(f *client.Fsys, current, updated metadata.Results) error {
-	if len(updated) != len(current) {
-		return fmt.Errorf("entry count mismatch: got %d, expected %d", len(updated), len(current))
-	}
-	currentMap := make(map[string]*metadata.Metadata)
-	for _, m := range current {
-		currentMap[m.Identifier] = m
-	}
-	for _, upd := range updated {
-		orig, exists := currentMap[upd.Identifier]
-		if !exists {
-			return fmt.Errorf("identifier '%s' not found", upd.Identifier)
-		}
-		if orig.Title != upd.Title || !slices.Equal(orig.Tags, upd.Tags) {
-			if err := p9client.WriteFile(f, "n/"+upd.Identifier+"/title", upd.Title); err != nil {
-				return fmt.Errorf("failed to write title for %s: %w", upd.Identifier, err)
-			}
-			if err := p9client.WriteFile(f, "n/"+upd.Identifier+"/keywords", strings.Join(upd.Tags, ",")); err != nil {
-				return fmt.Errorf("failed to write keywords for %s: %w", upd.Identifier, err)
-			}
-		}
-	}
-	return nil
 }
 
 var identifierPattern = regexp.MustCompile(`^\d{8}T\d{6}$`)
