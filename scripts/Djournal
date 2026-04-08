@@ -101,10 +101,10 @@ results=`{cat $mnt/index}
 # If no results, create new journal entry
 if(~ $#results 0) {
     if(! ~ $signature '') {
-        echo ''''$"title''' =='^$signature' journal' > $mnt/new
+        echo ''''$"title''' =='^$signature' journal @journal' > $mnt/new
     }
     if not {
-        echo ''''$"title''' journal' > $mnt/new
+        echo ''''$"title''' journal @journal' > $mnt/new
     }
 }
 if not Denote 'denote:'$results(1)
