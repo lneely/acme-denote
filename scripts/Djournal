@@ -79,15 +79,15 @@ BEGIN {
 
 switch($titleformat) {
 case full
-	title=`{echo $datefull | awk '{print tolower($0)}'}
+	title=$"datefull
 case date
-	title=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
+	title=`{echo $datefull | awk '{print $1 " " $2 " " $3 " " $4}'}
 case day
-	title=`{echo $datefull | awk '{print tolower($1)}'}
+	title=`{echo $datefull | awk '{print $1}'}
 case year
 	title=`{echo $datefull | awk '{print $4}'}
 case *
-	title=`{echo $datefull | awk '{print tolower($0)}'}
+	title=$"datefull
 }
 
 filtertitle=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
@@ -101,10 +101,10 @@ results=`{cat $mnt/index}
 # If no results, create new journal entry
 if(~ $#results 0) {
     if(! ~ $signature '') {
-        echo '''journal/:'$"title''' =='^$signature' journal' > $mnt/new
+        echo ''''$"title''' =='^$signature' journal' > $mnt/new
     }
     if not {
-        echo '''journal/:'$"title''' journal' > $mnt/new
+        echo ''''$"title''' journal' > $mnt/new
     }
 }
 if not Denote 'denote:'$results(1)
