@@ -12,6 +12,13 @@ signature=''
 mnt=$DENOTE_9MOUNT
 if(~ $#mnt 0) mnt=$HOME/mnt/denote
 
+basedir=$DENOTE_DIR
+if(~ $#basedir 0) basedir=$HOME/doc
+
+# Save current dir and cd to journal silo
+origdir=`{cat $mnt/dir}
+echo 'cd '$basedir/journal > $mnt/ctl
+
 # Parse time offset argument (e.g., +2d, -3h, +15m)
 offset=0
 if(! ~ $#* 0) {
@@ -101,13 +108,14 @@ results=`{cat $mnt/index}
 # If no results, create new journal entry
 if(~ $#results 0) {
     if(! ~ $signature '') {
-        echo ''''$"title''' =='^$signature' journal @journal' > $mnt/new
+        echo ''''$"title''' =='^$signature' journal' > $mnt/new
     }
     if not {
-        echo ''''$"title''' journal @journal' > $mnt/new
+        echo ''''$"title''' journal' > $mnt/new
     }
 }
 if not Denote 'denote:'$results(1)
 
-# Clear filter
+# Clear filter and restore original directory
 echo 'filter' > $mnt/ctl
+echo 'cd '$origdir > $mnt/ctl
