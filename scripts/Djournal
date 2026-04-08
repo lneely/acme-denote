@@ -97,7 +97,8 @@ case *
 	title=$"datefull
 }
 
-filtertitle=`{echo $datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
+filtertitle=`{echo $"datefull | awk '{print tolower($1 " " $2 " " $3 " " $4)}'}
+filtertitle=$"filtertitle
 
 # Apply filter
 echo 'filter title:'''$"filtertitle'''' > $mnt/ctl
@@ -108,13 +109,19 @@ results=`{cat $mnt/index}
 # If no results, create new journal entry
 if(~ $#results 0) {
     if(! ~ $signature '') {
-        echo ''''$"title''' =='^$signature' journal' > $mnt/new
+        cmd=''''$"title''' =='^$signature' journal'
     }
     if not {
-        echo ''''$"title''' journal' > $mnt/new
+        cmd=''''$"title''' journal'
     }
+    echo $cmd > $mnt/new
+    # Re-filter to get the new entry
+    echo 'filter' > $mnt/ctl
+    echo 'filter title:'''$"filtertitle'''' > $mnt/ctl
+    results=`{cat $mnt/index}
 }
-if not Denote 'denote:'$results(1)
+
+Denote 'denote:'$results(1)
 
 # Clear filter and restore original directory
 echo 'filter' > $mnt/ctl
