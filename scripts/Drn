@@ -1,4 +1,4 @@
-#!/usr/local/plan9/bin/rc
+#!/usr/bin/env rc
 
 # Drn - rename denote note metadata
 # usage: Drn [identifier] 'title' [==signature] [tags]
